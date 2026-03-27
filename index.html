@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灵感收集</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d0d0d; --bg-card: #1f1f1f; --bg-elevated: #262626;
+            --text: #f5f5f5; --text2: #a3a3a3; --text3: #737373;
+            --accent: #f97316; --border: rgba(255,255,255,0.06);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Noto Sans SC', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 16px; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 40px 24px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+        .header h1 { font-size: 28px; }
+        .header span { color: var(--text3); font-size: 14px; }
+
+        .paste-area { background: var(--bg-card); border: 2px dashed var(--border); border-radius: 12px; padding: 32px; text-align: center; margin-bottom: 40px; }
+        .paste-area.active { border-color: var(--accent); }
+        .paste-hint { color: var(--text3); margin-bottom: 8px; }
+        .paste-hint kbd { background: var(--bg-elevated); padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .paste-input { width: 100%; background: transparent; border: none; color: var(--text); font-size: 18px; outline: none; resize: none; min-height: 60px; text-align: center; font-family: inherit; }
+        .paste-input::placeholder { color: var(--text3); }
+        .paste-title { width: 100%; max-width: 500px; margin-top: 12px; padding: 10px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 16px; text-align: center; display: none; font-family: inherit; }
+        .paste-title:focus { outline: none; border-color: var(--accent); }
+        .paste-preview { margin-top: 16px; display: none; }
+        .paste-preview img { max-width: 100%; max-height: 200px; border-radius: 8px; }
+        .paste-actions { margin-top: 16px; display: none; gap: 12px; justify-content: center; }
+
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .btn-primary { background: linear-gradient(135deg, #f97316, #ea580c); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); }
+        .btn-secondary { background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); }
+        .btn-ghost { background: transparent; color: var(--text2); }
+        .btn-ghost:hover { color: var(--text); }
+        .btn-danger { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-active { background: linear-gradient(135deg, #f97316, #ea580c); color: white; }
+
+        .toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .filters { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .filters input, .filters select { padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 16px; font-family: inherit; }
+        .filters input { flex: 1; min-width: 200px; }
+        .filters input:focus, .filters select:focus { outline: none; border-color: var(--accent); }
+        .filters input::placeholder { color: var(--text3); }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: visible; transition: all 0.2s; cursor: pointer; position: relative; }
+        .card:hover { border-color: rgba(249,115,22,0.4); transform: translateY(-4px); }
+        .card.dragging { opacity: 0.5; }
+        .card.selected { border-color: var(--accent); box-shadow: 0 0 20px rgba(249,115,22,0.2); }
+        .card-check { position: absolute; top: 10px; left: 10px; z-index: 10; width: 24px; height: 24px; cursor: pointer; display: none; }
+        .card-check.show { display: block; }
+        .card-media { width: 100%; max-height: 180px; object-fit: cover; display: block; border-radius: 12px 12px 0 0; }
+        .card-body { padding: 16px; }
+        .card-text { font-size: 18px; line-height: 1.6; }
+        .card-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+        .card-content { font-size: 15px; color: var(--text2); margin-bottom: 12px; line-height: 1.6; word-break: break-all; }
+        .card-content a { color: #fb923c; text-decoration: none; }
+        .card-meta { display: flex; gap: 12px; font-size: 13px; color: var(--text3); margin-bottom: 12px; flex-wrap: wrap; }
+        .card-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .tag { background: rgba(249,115,22,0.1); color: #fb923c; padding: 4px 10px; border-radius: 12px; font-size: 12px; }
+        .card-actions { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--border); }
+        .status-badge { padding: 6px 14px; border-radius: 12px; font-size: 12px; color: white; cursor: pointer; position: relative; }
+        .status-menu { position: absolute; top: 100%; left: 0; margin-top: 6px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; display: none; min-width: 90px; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        .status-menu.show { display: block; }
+        .status-option { padding: 10px 16px; font-size: 13px; cursor: pointer; }
+        .status-option:hover { background: rgba(249,115,22,0.1); color: var(--accent); }
+        .card-btns { display: flex; gap: 6px; }
+
+        .empty { text-align: center; padding: 60px; color: var(--text3); grid-column: 1 / -1; }
+        .empty-icon { font-size: 48px; margin-bottom: 16px; }
+
+        .preview-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; align-items: center; justify-content: center; padding: 40px; }
+        .preview-overlay.show { display: flex; }
+        .preview-content { max-width: 90vw; max-height: 90vh; overflow: auto; }
+        .preview-text { background: var(--bg-card); padding: 40px; border-radius: 16px; max-width: 800px; font-size: 20px; line-height: 1.8; }
+        .preview-img { max-width: 100%; max-height: 90vh; object-fit: contain; border-radius: 8px; cursor: zoom-in; }
+        .preview-img.zoomed { cursor: zoom-out; max-width: none; max-height: none; }
+        .preview-close { position: fixed; top: 20px; right: 20px; background: var(--bg-elevated); border: none; color: var(--text); width: 40px; height: 40px; border-radius: 50%; font-size: 20px; cursor: pointer; z-index: 1001; }
+        .preview-meta { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--bg-elevated); padding: 10px 24px; border-radius: 24px; font-size: 14px; color: var(--text2); }
+
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 900; align-items: center; justify-content: center; padding: 20px; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .modal-header h2 { font-size: 20px; color: var(--accent); }
+        .modal-close { background: none; border: none; color: var(--text3); font-size: 24px; cursor: pointer; }
+        .modal-body { padding: 24px; }
+        .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: flex-end; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--text2); }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 14px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 16px; font-family: inherit; }
+        .form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
+        .form-group textarea { min-height: 80px; resize: vertical; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+        @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div><h1>💡 灵感收集</h1><span>粘贴即保存</span></div>
+    </div>
+
+    <div class="paste-area" id="pasteArea">
+        <div class="paste-hint">按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 粘贴文字、链接或图片</div>
+        <textarea class="paste-input" id="pasteInput" placeholder="或在这里输入..."></textarea>
+        <input class="paste-title" id="titleInput" placeholder="输入标题（链接时可选）">
+        <div class="paste-preview" id="pastePreview"><img id="previewImg"></div>
+        <div class="paste-actions" id="pasteActions">
+            <button class="btn btn-secondary" onclick="clearPaste()">清除</button>
+            <button class="btn btn-primary" onclick="quickSave()">保存</button>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button class="btn btn-secondary" id="selectModeBtn" onclick="toggleSelectMode()">☑️ 多选</button>
+        <button class="btn btn-secondary" id="selectAllBtn" onclick="selectAll()" style="display:none">全选</button>
+        <button class="btn btn-primary" id="mergeBtn" onclick="mergeSelected()" style="display:none">🔗 合并</button>
+        <button class="btn btn-danger" id="deleteSelectedBtn" onclick="deleteSelected()" style="display:none">删除选中</button>
+    </div>
+
+    <div class="filters">
+        <input id="searchInput" placeholder="搜索..." oninput="render()">
+        <select id="typeFilter" onchange="render()">
+            <option value="">全部类型</option>
+            <option value="文字">📝 文字</option>
+            <option value="链接">🔗 链接</option>
+            <option value="图片">🖼️ 图片</option>
+            <option value="组">📂 组合</option>
+        </select>
+    </div>
+
+    <div class="grid" id="grid"></div>
+</div>
+
+<div class="preview-overlay" id="previewOverlay" onclick="if(event.target===this)closePreview()">
+    <button class="preview-close" onclick="closePreview()">&times;</button>
+    <div class="preview-content" id="previewContent"></div>
+    <div class="preview-meta" id="previewMeta"></div>
+</div>
+
+<div class="modal-overlay" id="editModal">
+    <div class="modal">
+        <div class="modal-header"><h2>编辑</h2><button class="modal-close" onclick="closeEdit()">&times;</button></div>
+        <div class="modal-body">
+            <input type="hidden" id="editId">
+            <div class="form-group"><label>标题</label><input id="editTitle"></div>
+            <div class="form-group"><label>内容</label><textarea id="editContent"></textarea></div>
+            <div class="form-row">
+                <div class="form-group"><label>分类</label>
+                    <select id="editCategory"><option value="">无</option><option>工具</option><option>效率</option><option>创意</option><option>学习</option><option>设计</option><option>开发</option><option>生活</option></select>
+                </div>
+                <div class="form-group"><label>来源</label>
+                    <select id="editSource"><option value="">无</option><option>B站</option><option>YouTube</option><option>GitHub</option><option>小红书</option><option>Twitter</option><option>即刻</option><option>少数派</option><option>知乎</option><option>微信</option></select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>标签（逗号分隔）</label><input id="editTags"></div>
+                <div class="form-group"><label>状态</label>
+                    <select id="editStatus"><option>待整理</option><option>待实现</option><option>已实现</option><option>已归档</option></select>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeEdit()">取消</button>
+            <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const KEY = 'inspirations';
+const ICONS = { '文字': '📝', '链接': '🔗', '图片': '🖼️' };
+const COLORS = { '待整理': '#6c757d', '待实现': '#3b82f6', '已实现': '#22c55e', '已归档': '#f59e0b' };
+
+let pendingImage = null;
+let selectMode = false;
+let selectedIds = new Set();
+
+const getItems = () => JSON.parse(localStorage.getItem(KEY) || '[]');
+const saveItems = items => localStorage.setItem(KEY, JSON.stringify(items));
+const fmt = d => { const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+function getPlatform(url) {
+    if (/bilibili/i.test(url)) return 'B站';
+    if (/youtube|youtu\.be/i.test(url)) return 'YouTube';
+    if (/github/i.test(url)) return 'GitHub';
+    if (/xiaohongshu|xhslink/i.test(url)) return '小红书';
+    if (/twitter|x\.com/i.test(url)) return 'Twitter';
+    try { return new URL(url).hostname; } catch { return ''; }
+}
+
+// 粘贴
+document.getElementById('pasteInput').addEventListener('input', () => {
+    const v = document.getElementById('pasteInput').value.trim();
+    document.getElementById('pasteActions').style.display = v ? 'flex' : 'none';
+    document.getElementById('titleInput').style.display = /^https?:\/\//i.test(v) ? 'block' : 'none';
+});
+
+document.addEventListener('paste', e => {
+    for (const item of (e.clipboardData?.items || [])) {
+        if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            const r = new FileReader();
+            r.onload = ev => { pendingImage = ev.target.result; document.getElementById('previewImg').src = pendingImage; document.getElementById('pastePreview').style.display = 'block'; document.getElementById('pasteActions').style.display = 'flex'; document.getElementById('pasteArea').classList.add('active'); };
+            r.readAsDataURL(item.getAsFile());
+            return;
+        }
+    }
+    const text = e.clipboardData?.getData('text');
+    if (text && document.activeElement !== document.getElementById('pasteInput')) {
+        document.getElementById('pasteInput').value = text;
+        document.getElementById('pasteActions').style.display = 'flex';
+        if (/^https?:\/\//i.test(text)) document.getElementById('titleInput').style.display = 'block';
+    }
+});
+
+function clearPaste() {
+    document.getElementById('pasteInput').value = '';
+    document.getElementById('pastePreview').style.display = 'none';
+    document.getElementById('pasteActions').style.display = 'none';
+    document.getElementById('titleInput').style.display = 'none';
+    document.getElementById('titleInput').value = '';
+    document.getElementById('pasteArea').classList.remove('active');
+    pendingImage = null;
+}
+
+function quickSave() {
+    const text = document.getElementById('pasteInput').value.trim();
+    const title = document.getElementById('titleInput').value.trim();
+    if (!text && !pendingImage) return;
+    let type = '文字', content = text, itemTitle = '', source = '';
+    if (/^https?:\/\//i.test(text)) { type = '链接'; source = getPlatform(text); itemTitle = title || source; }
+    if (pendingImage) { type = '图片'; }
+    const items = getItems();
+    items.unshift({ id: Date.now(), title: itemTitle, content, type, fileData: pendingImage, category: '', source, tags: '', status: '待整理', createdAt: new Date().toISOString() });
+    saveItems(items);
+    clearPaste();
+    render();
+}
+
+// 选择模式
+function toggleSelectMode() {
+    selectMode = !selectMode;
+    document.getElementById('selectModeBtn').className = selectMode ? 'btn btn-active' : 'btn btn-secondary';
+    document.getElementById('selectAllBtn').style.display = selectMode ? 'inline-flex' : 'none';
+    document.getElementById('mergeBtn').style.display = selectMode ? 'inline-flex' : 'none';
+    document.getElementById('deleteSelectedBtn').style.display = selectMode ? 'inline-flex' : 'none';
+    if (!selectMode) selectedIds.clear();
+    render();
+}
+
+function selectAll() { getItems().forEach(i => selectedIds.add(i.id)); render(); }
+
+function toggleSelect(id, e) {
+    e.stopPropagation();
+    if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+    render();
+}
+
+function deleteSelected() {
+    if (!selectedIds.size || !confirm(`删除 ${selectedIds.size} 条？`)) return;
+    saveItems(getItems().filter(i => !selectedIds.has(i.id)));
+    selectedIds.clear();
+    render();
+}
+
+function mergeSelected() {
+    if (selectedIds.size < 2) { alert('请选择至少2条灵感'); return; }
+    const items = getItems();
+    const selected = items.filter(i => selectedIds.has(i.id));
+    
+    const group = {
+        id: Date.now(),
+        title: '灵感组合',
+        content: '',
+        type: '组',
+        fileData: null,
+        category: selected[0]?.category || '',
+        source: '',
+        tags: '',
+        status: '待整理',
+        createdAt: new Date().toISOString(),
+        children: selected.map(i => ({
+            title: i.title,
+            content: i.content,
+            type: i.type,
+            fileData: i.fileData,
+            source: i.source,
+            createdAt: i.createdAt
+        }))
+    };
+    
+    const newItems = items.filter(i => !selectedIds.has(i.id));
+    newItems.unshift(group);
+    saveItems(newItems);
+    selectedIds.clear();
+    selectMode = false;
+    document.getElementById('selectModeBtn').className = 'btn btn-secondary';
+    document.getElementById('selectAllBtn').style.display = 'none';
+    document.getElementById('mergeBtn').style.display = 'none';
+    document.getElementById('deleteSelectedBtn').style.display = 'none';
+    render();
+}
+
+// 删除
+function deleteItem(id, e) {
+    e.stopPropagation();
+    if (!confirm('删除？')) return;
+    saveItems(getItems().filter(i => i.id !== id));
+    render();
+}
+
+// 状态
+function updateStatus(id, status) { const items = getItems(); const i = items.find(x => x.id === id); if (i) { i.status = status; saveItems(items); render(); } }
+function toggleStatusMenu(id, e) { e.stopPropagation(); document.querySelectorAll('.status-menu').forEach(m => m.classList.remove('show')); document.getElementById('sm-'+id).classList.toggle('show'); }
+
+// 预览
+function openPreview(id) {
+    const i = getItems().find(x => x.id === id);
+    if (!i) return;
+    const c = document.getElementById('previewContent');
+    
+    if (i.type === '组' && i.children) {
+        // 显示组内所有内容
+        c.innerHTML = `
+            <div class="preview-text" style="max-width:900px">
+                <div style="font-size:24px;font-weight:600;margin-bottom:24px;color:var(--accent)">📂 ${i.title}</div>
+                ${i.children.map((child, idx) => `
+                    <div style="background:var(--bg-elevated);padding:20px;border-radius:12px;margin-bottom:16px;border-left:3px solid var(--accent)">
+                        <div style="font-size:14px;color:var(--text3);margin-bottom:8px">${ICONS[child.type] || '📄'} ${child.source || ''} · ${fmt(new Date(child.createdAt))}</div>
+                        ${child.title ? `<div style="font-size:18px;font-weight:600;margin-bottom:8px">${child.title}</div>` : ''}
+                        ${child.type === '图片' && child.fileData ? `<img src="${child.fileData}" style="max-width:100%;border-radius:8px;margin-bottom:8px">` : ''}
+                        ${child.type === '链接' ? `<a href="${child.content}" target="_blank" style="color:#fb923c;word-break:break-all">${child.content}</a>` : 
+                          child.content ? `<div style="color:var(--text2);line-height:1.6">${child.content}</div>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } else if (i.type === '图片' && i.fileData) {
+        c.innerHTML = `<img src="${i.fileData}" class="preview-img" onclick="this.classList.toggle('zoomed')">`;
+    } else if (i.type === '链接') {
+        c.innerHTML = `<div class="preview-text"><div style="color:var(--text3);margin-bottom:12px">${i.source}</div><div style="font-size:22px;font-weight:600;margin-bottom:16px">${i.title}</div><a href="${i.content}" target="_blank" style="color:#fb923c">${i.content}</a></div>`;
+    } else {
+        c.innerHTML = `<div class="preview-text">${i.content}</div>`;
+    }
+    document.getElementById('previewMeta').textContent = fmt(new Date(i.createdAt));
+    document.getElementById('previewOverlay').classList.add('show');
+}
+function closePreview() { document.getElementById('previewOverlay').classList.remove('show'); }
+
+// 编辑
+function openEdit(id, e) {
+    e.stopPropagation();
+    const i = getItems().find(x => x.id === id);
+    if (!i) return;
+    document.getElementById('editId').value = id;
+    document.getElementById('editTitle').value = i.title;
+    document.getElementById('editContent').value = i.content;
+    document.getElementById('editCategory').value = i.category || '';
+    document.getElementById('editSource').value = i.source || '';
+    document.getElementById('editTags').value = i.tags;
+    document.getElementById('editStatus').value = i.status;
+    document.getElementById('editModal').classList.add('show');
+}
+function closeEdit() { document.getElementById('editModal').classList.remove('show'); }
+function saveEdit() {
+    const id = +document.getElementById('editId').value;
+    const items = getItems();
+    const i = items.find(x => x.id === id);
+    if (!i) return;
+    i.title = document.getElementById('editTitle').value;
+    i.content = document.getElementById('editContent').value;
+    i.category = document.getElementById('editCategory').value;
+    i.source = document.getElementById('editSource').value;
+    i.tags = document.getElementById('editTags').value;
+    i.status = document.getElementById('editStatus').value;
+    saveItems(items);
+    closeEdit();
+    render();
+}
+
+// 渲染
+function render() {
+    let items = getItems();
+    const s = document.getElementById('searchInput').value.toLowerCase();
+    const t = document.getElementById('typeFilter').value;
+    if (s) items = items.filter(i => (i.title + i.content + i.tags).toLowerCase().includes(s));
+    if (t) items = items.filter(i => i.type === t);
+
+    const grid = document.getElementById('grid');
+    if (!items.length) { grid.innerHTML = '<div class="empty"><div class="empty-icon">✨</div><p>粘贴内容开始收集灵感</p></div>'; return; }
+
+    grid.innerHTML = items.map(i => `
+        <div class="card ${selectedIds.has(i.id) ? 'selected' : ''}" onclick="openPreview(${i.id})">
+            ${selectMode ? `<input type="checkbox" class="card-check show" ${selectedIds.has(i.id)?'checked':''} onclick="toggleSelect(${i.id},event)">` : ''}
+            ${i.type === '图片' && i.fileData ? `<img src="${i.fileData}" class="card-media">` : ''}
+            <div class="card-body">
+                ${i.type === '组' ? `
+                    <div class="card-title"><span>📂</span> ${i.title}</div>
+                    <div style="color:var(--text3);font-size:14px;margin-bottom:12px">包含 ${i.children?.length || 0} 条灵感</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px">
+                        ${(i.children || []).slice(0, 3).map(c => `<span class="tag">${ICONS[c.type] || '📄'} ${c.type === '文字' ? (c.content||'').slice(0,10) : c.title || c.type}</span>`).join('')}
+                        ${(i.children?.length || 0) > 3 ? `<span class="tag">+${i.children.length - 3}</span>` : ''}
+                    </div>
+                ` : i.type === '文字' ? `<div class="card-text">${i.content}</div>` : `
+                    <div class="card-title"><span>${ICONS[i.type]}</span> ${i.title}</div>
+                    ${i.content ? `<div class="card-content">${i.type === '链接' ? `<a href="${i.content}" target="_blank" onclick="event.stopPropagation()">${i.content}</a>` : i.content}</div>` : ''}
+                `}
+                <div class="card-meta">
+                    ${i.source ? `<span>📍${i.source}</span>` : ''}
+                    ${i.category ? `<span>📁${i.category}</span>` : ''}
+                    <span>🕐${fmt(new Date(i.createdAt))}</span>
+                </div>
+                ${i.tags ? `<div class="card-tags">${i.tags.split(',').filter(t=>t.trim()).map(t=>`<span class="tag">#${t.trim()}</span>`).join('')}</div>` : ''}
+                <div class="card-actions" onclick="event.stopPropagation()">
+                    <div style="position:relative">
+                        <span class="status-badge" style="background:${COLORS[i.status]}" onclick="toggleStatusMenu(${i.id},event)">${i.status}</span>
+                        <div class="status-menu" id="sm-${i.id}">
+                            ${['待整理','待实现','已实现','已归档'].map(s=>`<div class="status-option" onclick="updateStatus(${i.id},'${s}')">${s}</div>`).join('')}
+                        </div>
+                    </div>
+                    <div class="card-btns">
+                        <button class="btn btn-ghost btn-sm" onclick="openEdit(${i.id},event)">编辑</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteItem(${i.id},event)">删除</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+document.addEventListener('click', () => document.querySelectorAll('.status-menu').forEach(m => m.classList.remove('show')));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePreview(); closeEdit(); } });
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <div class="header-left">
+        <span class="logo">💡</span>
+        <div>
+            <h1>Inspiration Collector</h1>
+            <div class="header-subtitle">收集灵感，创造未来</div>
+        </div>
+    </div>
+    <a href="/add" class="btn btn-primary">
+        <span>✦</span> 添加灵感
+    </a>
+</div>
+
+<!-- 统计 -->
+<div class="stats">
+    <div class="stat-card">
+        <div class="stat-num">{{ stats['total'] }}</div>
+        <div class="stat-label">总计</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-num" style="color:#737373">{{ stats['待整理'] }}</div>
+        <div class="stat-label">待整理</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-num" style="color:#3b82f6">{{ stats['待实现'] }}</div>
+        <div class="stat-label">待实现</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-num" style="color:#22c55e">{{ stats['已实现'] }}</div>
+        <div class="stat-label">已实现</div>
+    </div>
+</div>
+
+<!-- 筛选 -->
+<form class="filters" method="get">
+    <input type="text" name="search" placeholder="搜索标题、内容、标签..." value="{{ search }}">
+    <select name="category" onchange="this.form.submit()">
+        <option value="">全部分类</option>
+        {% for cat in categories %}
+        <option value="{{ cat }}" {{ 'selected' if cat == current_category }}>{{ cat }}</option>
+        {% endfor %}
+    </select>
+    <select name="type" onchange="this.form.submit()">
+        <option value="">全部类型</option>
+        {% for type in content_types %}
+        <option value="{{ type }}" {{ 'selected' if type == current_type }}>{{ type_icons[type] }} {{ type }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-secondary">搜索</button>
+    {% if search or current_category or current_type %}
+    <a href="/" class="btn btn-ghost">清除筛选</a>
+    {% endif %}
+</form>
+
+<!-- 内容网格 -->
+{% if items %}
+<div class="grid">
+    {% for item in items %}
+    <div class="card">
+        {% if item.content_type == '图片' and item.file_path %}
+        <img src="/uploads/{{ item.file_path }}" class="card-media" alt="{{ item.title }}">
+        {% elif item.content_type == '视频' and item.file_path %}
+        <video src="/uploads/{{ item.file_path }}" class="card-media" controls></video>
+        {% endif %}
+        
+        <div class="card-body">
+            <div class="card-header">
+                <span class="type-icon">{{ type_icons[item.content_type] }}</span>
+                <div class="card-title">{{ item.title }}</div>
+            </div>
+            
+            {% if item.content %}
+            <div class="card-content">
+                {% if item.content_type == '链接' %}
+                <a href="{{ item.content }}" target="_blank">{{ item.content }}</a>
+                {% else %}
+                {{ item.content }}
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <div class="card-meta">
+                {% if item.source %}<span>📍 {{ item.source }}</span>{% endif %}
+                {% if item.category %}<span>📁 {{ item.category }}</span>{% endif %}
+                <span>🕐 {{ item.created_at }}</span>
+            </div>
+            
+            {% if item.tags %}
+            <div class="card-tags">
+                {% for tag in item.tags.split(',') %}
+                {% if tag.strip() %}<span class="tag">#{{ tag.strip() }}</span>{% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            <div class="card-actions">
+                <div class="status-dropdown">
+                    <span class="status-badge" style="background:{{ status_colors[item.status] }}" onclick="toggleStatusMenu({{ item.id }})">
+                        {{ item.status }}
+                    </span>
+                    <div class="status-menu" id="status-menu-{{ item.id }}">
+                        {% for s in statuses %}
+                        <div class="status-option" onclick="updateStatus({{ item.id }}, '{{ s }}')">{{ s }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="card-btns">
+                    <a href="/edit/{{ item.id }}" class="btn btn-ghost btn-sm">编辑</a>
+                    <button class="btn btn-danger btn-sm" onclick="deleteItem({{ item.id }})">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+    <div class="empty-icon">✨</div>
+    <h3>开始收集你的灵感</h3>
+    <p>记录每一个闪现的想法，让创意不再流失</p>
+    <a href="/add" class="btn btn-primary">添加第一个灵感</a>
+</div>
+{% endif %}
+{% endblock %}

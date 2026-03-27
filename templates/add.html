@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <div class="header-left">
+        <span class="logo">✨</span>
+        <div>
+            <h1>添加灵感</h1>
+            <div class="header-subtitle">捕捉每一个创意瞬间</div>
+        </div>
+    </div>
+    <a href="/" class="btn btn-secondary">← 返回</a>
+</div>
+
+<div class="form-container">
+    <form method="post" enctype="multipart/form-data">
+        <div class="form-row">
+            <div class="form-group">
+                <label>标题 *</label>
+                <input type="text" name="title" required placeholder="给灵感起个名字">
+            </div>
+            <div class="form-group">
+                <label>内容类型</label>
+                <select name="content_type" id="content_type" onchange="toggleFileUpload()">
+                    {% for type in content_types %}
+                    <option value="{{ type }}">{{ type_icons[type] }} {{ type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>内容</label>
+            <textarea name="content" id="content_field" placeholder="描述你的灵感，或者粘贴链接..."></textarea>
+        </div>
+        
+        <div class="form-group" id="file_upload" style="display:none">
+            <label>上传文件（图片/视频）</label>
+            <input type="file" name="file" accept="image/*,video/*" id="file_input" onchange="previewFile()">
+            <img id="preview" class="file-preview" style="display:none">
+            <video id="video_preview" class="file-preview" style="display:none" controls></video>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label>来源平台</label>
+                <input type="text" name="source" placeholder="GitHub / Twitter / 少数派...">
+            </div>
+            <div class="form-group">
+                <label>分类</label>
+                <input type="text" name="category" list="categories" placeholder="工具 / 效率 / 创意...">
+                <datalist id="categories">
+                    {% for cat in categories %}
+                    <option value="{{ cat }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label>标签（逗号分隔）</label>
+                <input type="text" name="tags" placeholder="开源, 免费, AI...">
+            </div>
+            <div class="form-group">
+                <label>状态</label>
+                <select name="status">
+                    {% for s in statuses %}
+                    <option value="{{ s }}">{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>备注</label>
+            <textarea name="notes" placeholder="其他想法..."></textarea>
+        </div>
+        
+        <div class="form-actions">
+            <a href="/" class="btn btn-secondary">取消</a>
+            <button type="submit" class="btn btn-primary">✦ 保存灵感</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function toggleFileUpload() {
+    const type = document.getElementById('content_type').value;
+    const fileUpload = document.getElementById('file_upload');
+    fileUpload.style.display = (type === '图片' || type === '视频') ? 'block' : 'none';
+}
+
+function previewFile() {
+    const file = document.getElementById('file_input').files[0];
+    const preview = document.getElementById('preview');
+    const videoPreview = document.getElementById('video_preview');
+    
+    preview.style.display = 'none';
+    videoPreview.style.display = 'none';
+    
+    if (file) {
+        const reader = new FileReader();
+        if (file.type.startsWith('image/')) {
+            reader.onload = e => {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type.startsWith('video/')) {
+            reader.onload = e => {
+                videoPreview.src = e.target.result;
+                videoPreview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+}
+</script>
+{% endblock %}

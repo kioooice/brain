@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <div class="header-left">
+        <span class="logo">✏️</span>
+        <div>
+            <h1>编辑灵感</h1>
+            <div class="header-subtitle">完善你的创意记录</div>
+        </div>
+    </div>
+    <a href="/" class="btn btn-secondary">← 返回</a>
+</div>
+
+<div class="form-container">
+    <form method="post" enctype="multipart/form-data">
+        <div class="form-row">
+            <div class="form-group">
+                <label>标题 *</label>
+                <input type="text" name="title" required value="{{ item.title }}">
+            </div>
+            <div class="form-group">
+                <label>内容类型</label>
+                <select name="content_type" id="content_type" onchange="toggleFileUpload()">
+                    {% for type in content_types %}
+                    <option value="{{ type }}" {{ 'selected' if type == item.content_type }}>{{ type_icons[type] }} {{ type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>内容</label>
+            <textarea name="content" id="content_field">{{ item.content or '' }}</textarea>
+        </div>
+        
+        {% if item.file_path %}
+        <div class="form-group">
+            <label>当前文件</label>
+            {% if item.content_type == '图片' %}
+            <img src="/uploads/{{ item.file_path }}" class="file-preview">
+            {% elif item.content_type == '视频' %}
+            <video src="/uploads/{{ item.file_path }}" class="file-preview" controls></video>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <div class="form-group" id="file_upload" style="display:{{ 'block' if item.content_type in ['图片', '视频'] else 'none' }}">
+            <label>上传新文件（可选）</label>
+            <input type="file" name="file" accept="image/*,video/*" id="file_input" onchange="previewFile()">
+            <img id="preview" class="file-preview" style="display:none">
+            <video id="video_preview" class="file-preview" style="display:none" controls></video>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label>来源平台</label>
+                <input type="text" name="source" value="{{ item.source or '' }}">
+            </div>
+            <div class="form-group">
+                <label>分类</label>
+                <input type="text" name="category" value="{{ item.category or '' }}" list="categories">
+                <datalist id="categories">
+                    {% for cat in categories %}
+                    <option value="{{ cat }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label>标签（逗号分隔）</label>
+                <input type="text" name="tags" value="{{ item.tags or '' }}">
+            </div>
+            <div class="form-group">
+                <label>状态</label>
+                <select name="status">
+                    {% for s in statuses %}
+                    <option value="{{ s }}" {{ 'selected' if s == item.status }}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>备注</label>
+            <textarea name="notes">{{ item.notes or '' }}</textarea>
+        </div>
+        
+        <div class="form-actions">
+            <a href="/" class="btn btn-secondary">取消</a>
+            <button type="submit" class="btn btn-primary">✦ 保存修改</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function toggleFileUpload() {
+    const type = document.getElementById('content_type').value;
+    const fileUpload = document.getElementById('file_upload');
+    fileUpload.style.display = (type === '图片' || type === '视频') ? 'block' : 'none';
+}
+
+function previewFile() {
+    const file = document.getElementById('file_input').files[0];
+    const preview = document.getElementById('preview');
+    const videoPreview = document.getElementById('video_preview');
+    
+    preview.style.display = 'none';
+    videoPreview.style.display = 'none';
+    
+    if (file) {
+        const reader = new FileReader();
+        if (file.type.startsWith('image/')) {
+            reader.onload = e => {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type.startsWith('video/')) {
+            reader.onload = e => {
+                videoPreview.src = e.target.result;
+                videoPreview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+}
+</script>
+{% endblock %}
