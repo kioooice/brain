@@ -16,6 +16,11 @@
     <div class="bundle-preview">
       <strong>文件夹内容包</strong>
       <span>内含 {{ item.children|length }} 项</span>
+      <div class="bundle-hints">
+        {% for child in item.children[:2] %}
+        <span class="bundle-hint">{{ child.title or child.content or "未命名子项" }}</span>
+        {% endfor %}
+      </div>
     </div>
     {% elif lower_file_path.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) %}
     <img class="card-media zoomable" src="{{ url_for('main.uploaded_file', filename=item.file_path) }}" alt="{{ item.title }}">

@@ -55,7 +55,10 @@ def index():
     inbox_items = []
     for item in inbox_source_items:
         item_dict = serialize_item(item)
-        item_dict["suggested_boxes"] = suggest_boxes_for_item(item)
+        try:
+            item_dict["suggested_boxes"] = suggest_boxes_for_item(item)
+        except Exception:
+            item_dict["suggested_boxes"] = []
         inbox_items.append(item_dict)
 
     return render_template(

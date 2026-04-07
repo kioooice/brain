@@ -238,6 +238,29 @@ class TestAppCase(unittest.TestCase):
             self.assertTrue(item.is_inbox)
             self.assertIsNone(item.box_id)
 
+    def test_bundle_card_shows_child_preview_hints(self):
+        merge_response = self.client.post(
+            "/api/merge",
+            json={"ids": [self.first_id, self.second_id]},
+        )
+        self.assertEqual(merge_response.status_code, 200)
+
+        response = self.client.get("/?show_sorted=1")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("文件夹内容包", html)
+        self.assertIn("内含 2 项", html)
+        self.assertIn("Alpha idea", html)
+        self.assertIn("Beta note", html)
+
+    def test_index_survives_suggestion_failure(self):
+        with patch("brain_app.routes.suggest_boxes_for_item", side_effect=RuntimeError("boom")):
+            response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("未整理", html)
+
     def test_batch_delete_removes_records(self):
         response = self.client.post(
             "/api/batch-delete",
