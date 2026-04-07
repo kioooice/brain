@@ -16,9 +16,12 @@ from .services import (
     extract_title_from_url,
     filter_items,
     get_categories,
+    get_boxes,
+    get_inbox_items,
     get_stats,
     infer_content_type_from_upload,
     merge_records,
+    place_item_into_box,
     normalize_status,
     save_uploaded_file,
     validate_outbound_url,
@@ -41,13 +44,18 @@ def index():
     type_filter = request.args.get("type", "").strip()
     status_filter = request.args.get("status", "").strip()
     search = request.args.get("search", "").strip()
+    show_sorted = request.args.get("show_sorted", "").strip().lower() in {"1", "true", "yes", "on"}
 
     items = filter_items(category_filter, type_filter, status_filter, search)
     serialized_items = [serialize_item(item) for item in items]
+    inbox_items = [serialize_item(item) for item in get_inbox_items(show_sorted=show_sorted)]
 
     return render_template(
         "index.html",
         items=serialized_items,
+        inbox_items=inbox_items,
+        boxes=[box.to_dict() for box in get_boxes()],
+        show_sorted=show_sorted,
         categories=get_categories(),
         stats=get_stats(),
         current_category=category_filter,
@@ -328,6 +336,33 @@ def api_delete_item(item_id: int):
     db.session.delete(item)
     db.session.commit()
     return jsonify({"success": True})
+
+
+@bp.route("/api/items/<int:item_id>/place", methods=["POST"])
+def api_place_item(item_id: int):
+    item = db.session.get(Inspiration, item_id)
+    if not item:
+        return jsonify({"success": False, "error": "记录不存在"}), 404
+
+    data = request.get_json(silent=True) or {}
+    try:
+        box_id = int(data.get("box_id"))
+        item = place_item_into_box(item, box_id)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "盒子不存在"}), 400
+
+    return jsonify({"success": True, "item": serialize_item(item)})
+
+
+@bp.route("/api/items/<int:item_id>/move-back", methods=["POST"])
+def api_move_item_back(item_id: int):
+    item = db.session.get(Inspiration, item_id)
+    if not item:
+        return jsonify({"success": False, "error": "记录不存在"}), 404
+
+    item.move_back_to_inbox()
+    db.session.commit()
+    return jsonify({"success": True, "item": serialize_item(item)})
 
 
 def inject_template_globals():

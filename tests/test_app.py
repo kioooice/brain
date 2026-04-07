@@ -162,6 +162,68 @@ class TestAppCase(unittest.TestCase):
             self.assertEqual([record.id for record in inbox_items], [self.second_id])
             self.assertEqual({record.id for record in all_items}, {self.first_id, self.second_id})
 
+    def test_index_exposes_box_and_inbox_data(self):
+        with self.app.app_context():
+            box = Box(name="产品灵感", color="#f97316")
+            db.session.add(box)
+            db.session.commit()
+
+        with patch("brain_app.routes.render_template", return_value="ok") as render_template:
+            response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        context = render_template.call_args.kwargs
+        self.assertIn("boxes", context)
+        self.assertIn("inbox_items", context)
+        self.assertIn("show_sorted", context)
+        self.assertEqual(context["boxes"][0]["name"], "产品灵感")
+        self.assertEqual([item["id"] for item in context["inbox_items"]], [self.first_id, self.second_id])
+
+    def test_place_item_into_box_api_moves_item_out_of_inbox(self):
+        with self.app.app_context():
+            box = Box(name="内容选题", color="#22c55e")
+            db.session.add(box)
+            db.session.commit()
+            box_id = box.id
+
+        response = self.client.post(
+            f"/api/items/{self.first_id}/place",
+            json={"box_id": box_id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["item"]["box_id"], box_id)
+        self.assertFalse(payload["item"]["is_inbox"])
+
+        with self.app.app_context():
+            item = db.session.get(Inspiration, self.first_id)
+            self.assertEqual(item.box_id, box_id)
+            self.assertFalse(item.is_inbox)
+
+    def test_move_item_back_to_inbox_api_clears_box_state(self):
+        with self.app.app_context():
+            box = Box(name="设计参考", color="#2563eb")
+            db.session.add(box)
+            db.session.commit()
+            item = db.session.get(Inspiration, self.first_id)
+            item.place_into_box(box)
+            db.session.commit()
+
+        response = self.client.post(f"/api/items/{self.first_id}/move-back")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["item"]["is_inbox"])
+        self.assertEqual(payload["item"]["box_id"], None)
+
+        with self.app.app_context():
+            item = db.session.get(Inspiration, self.first_id)
+            self.assertTrue(item.is_inbox)
+            self.assertIsNone(item.box_id)
+
     def test_batch_delete_removes_records(self):
         response = self.client.post(
             "/api/batch-delete",
