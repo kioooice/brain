@@ -49,7 +49,15 @@
   <footer class="work-card-foot">
     <div class="suggestion-head">
       <strong>建议放入</strong>
-      {% if item.suggested_boxes %}
+      {% if selected_box and item.box_id %}
+      <button
+        class="btn move-back-btn"
+        data-item-id="{{ item.id }}"
+        type="button"
+      >
+        移回大口袋
+      </button>
+      {% elif item.suggested_boxes %}
       <button
         class="btn btn-primary quick-place-btn"
         data-item-id="{{ item.id }}"

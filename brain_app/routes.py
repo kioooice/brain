@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, redirect, render_template, request, send_f
 
 from .constants import CONTENT_TYPES, STATUSES, STATUS_COLORS, TYPE_GROUP, TYPE_ICONS, TYPE_TEXT
 from .extensions import db
-from .models import Inspiration
+from .models import Box, Inspiration
 from .services import (
     analyze_pasted_content,
     apply_form_to_item,
@@ -45,7 +45,22 @@ def index():
     type_filter = request.args.get("type", "").strip()
     status_filter = request.args.get("status", "").strip()
     search = request.args.get("search", "").strip()
+    box_id_raw = request.args.get("box_id", "").strip()
     show_sorted = request.args.get("show_sorted", "").strip().lower() in {"1", "true", "yes", "on"}
+    selected_box = None
+    selected_box_items = []
+    selected_box_prev = None
+    selected_box_next = None
+    boxes = [box.to_dict() for box in get_boxes()]
+
+    if box_id_raw.isdigit():
+        selected_box = db.session.get(Box, int(box_id_raw))
+        if selected_box:
+            selected_index = next((index for index, box in enumerate(boxes) if box["id"] == selected_box.id), -1)
+            if selected_index > 0:
+                selected_box_prev = boxes[selected_index - 1]
+            if 0 <= selected_index < len(boxes) - 1:
+                selected_box_next = boxes[selected_index + 1]
 
     items = filter_items(category_filter, type_filter, status_filter, search)
     serialized_items = [serialize_item(item) for item in items]
@@ -61,11 +76,29 @@ def index():
             item_dict["suggested_boxes"] = []
         inbox_items.append(item_dict)
 
+    if selected_box:
+        box_items = (
+            Inspiration.query.filter(Inspiration.box_id == selected_box.id)
+            .order_by(Inspiration.created_at.desc())
+            .all()
+        )
+        for item in box_items:
+            item_dict = serialize_item(item)
+            try:
+                item_dict["suggested_boxes"] = suggest_boxes_for_item(item)
+            except Exception:
+                item_dict["suggested_boxes"] = []
+            selected_box_items.append(item_dict)
+
     return render_template(
         "index.html",
         items=serialized_items,
         inbox_items=inbox_items,
-        boxes=[box.to_dict() for box in get_boxes()],
+        selected_box=selected_box.to_dict() if selected_box else None,
+        selected_box_items=selected_box_items,
+        selected_box_prev=selected_box_prev,
+        selected_box_next=selected_box_next,
+        boxes=boxes,
         show_sorted=show_sorted,
         categories=get_categories(),
         stats=get_stats(),
@@ -180,6 +213,32 @@ def api_add():
     db.session.add(item)
     db.session.commit()
     return jsonify({"success": True, "id": item.id})
+
+
+@bp.route("/api/boxes", methods=["POST"])
+def api_create_box():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    color = (data.get("color") or "#f97316").strip() or "#f97316"
+    description = (data.get("description") or "").strip()
+
+    if not name:
+        return jsonify({"success": False, "error": "盒子名称不能为空"}), 400
+
+    existing = Box.query.filter(Box.name == name).first()
+    if existing:
+        return jsonify({"success": False, "error": "盒子名称已存在"}), 400
+
+    sort_order = db.session.query(db.func.max(Box.sort_order)).scalar()
+    box = Box(
+        name=name,
+        color=color,
+        description=description,
+        sort_order=(sort_order or 0) + 1,
+    )
+    db.session.add(box)
+    db.session.commit()
+    return jsonify({"success": True, "box": box.to_dict()}), 201
 
 
 @bp.route("/api/edit/<int:item_id>", methods=["PUT"])

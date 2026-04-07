@@ -63,6 +63,13 @@
     letter-spacing: -0.02em;
   }
 
+  .section-head-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
   .section-head p,
   .meta,
   .line {
@@ -98,6 +105,11 @@
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--box-color) 62%, white);
     box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+  }
+
+  .box-dropzone.active {
+    border-color: color-mix(in srgb, var(--box-color) 76%, white);
+    box-shadow: 0 20px 38px rgba(15, 23, 42, 0.14);
   }
 
   .workbench-main {
@@ -307,6 +319,22 @@
 
   .quick-overlay.active { display: flex; }
 
+  .mini-modal {
+    width: min(520px, 100%);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.20);
+    padding: 18px;
+    display: grid;
+    gap: 14px;
+  }
+
+  .mini-form {
+    display: grid;
+    gap: 12px;
+  }
+
   .quick-modal {
     width: min(860px, 100%);
     max-height: 90vh;
@@ -419,12 +447,15 @@
   <aside class="panel box-rail">
     <div class="section-head">
       <div class="eyebrow">主题盒子</div>
-      <h2>主题盒子</h2>
+      <div class="section-head-actions">
+        <h2>主题盒子</h2>
+        <button id="openBoxModalBtn" class="btn" type="button">新建盒子</button>
+      </div>
       <p>把大口袋里的内容拖进这里，或者点卡片上的一键放入。</p>
     </div>
     <div class="box-rail-grid">
       {% for box in boxes %}
-      <button class="box-dropzone" data-box-id="{{ box.id }}" type="button" style="--box-color: {{ box.color }};">
+      <button class="box-dropzone{% if selected_box and selected_box.id == box.id %} active{% endif %}" data-box-id="{{ box.id }}" type="button" style="--box-color: {{ box.color }};" aria-pressed="{% if selected_box and selected_box.id == box.id %}true{% else %}false{% endif %}">
         <strong>{{ box.name }}</strong>
         <span class="meta">{{ box.item_count }} 项{% if box.description %} · {{ box.description }}{% endif %}</span>
       </button>
@@ -440,36 +471,46 @@
   <div class="workbench-main">
     <section class="panel capture-panel">
       <div class="section-head">
-        <div class="eyebrow">大口袋</div>
-        <h2>未整理</h2>
-        <p>所有新内容先放这里。看一眼，拖进去，或者一键归位。</p>
+        <div class="eyebrow">{% if selected_box %}已打开盒子{% else %}大口袋{% endif %}</div>
+        <h2>{% if selected_box %}{{ selected_box.name }}{% else %}未整理{% endif %}</h2>
+        <p>{% if selected_box %}这里显示这个盒子里的内容。你可以先看盒内，再决定移回大口袋或继续整理。{% else %}所有新内容先放这里。看一眼，拖进去，或者一键归位。{% endif %}</p>
       </div>
       <div class="capture-actions">
         <button id="openQuickBtnInline" class="btn btn-primary" type="button">快速放入内容</button>
+        {% if selected_box %}
+        {% if selected_box_prev %}
+        <a class="btn" href="{{ url_for('main.index', box_id=selected_box_prev.id, show_sorted='1' if show_sorted else None) }}">上一个盒子</a>
+        {% endif %}
+        {% if selected_box_next %}
+        <a class="btn" href="{{ url_for('main.index', box_id=selected_box_next.id, show_sorted='1' if show_sorted else None) }}">下一个盒子</a>
+        {% endif %}
+        <a class="btn" href="{{ url_for('main.index', show_sorted='1' if show_sorted else None) }}">返回未整理</a>
+        {% endif %}
         <label class="toggle">
           <input id="showSortedToggle" type="checkbox" {% if show_sorted %}checked{% endif %}>
           <span>显示已归位内容</span>
         </label>
-        <span class="meta">当前共 {{ inbox_items|length }} 条可见内容</span>
+        <span class="meta">{% if selected_box %}盒内当前共 {{ selected_box_items|length }} 条内容{% else %}当前共 {{ inbox_items|length }} 条可见内容{% endif %}</span>
       </div>
     </section>
 
     <section class="panel inbox-panel">
       <div class="section-head">
-        <h2>未整理内容</h2>
-        <p>按内容类型分卡片显示。先看图、看标题、看建议盒子，再决定放哪里。</p>
+        <h2>{% if selected_box %}盒子内容{% else %}未整理内容{% endif %}</h2>
+        <p>{% if selected_box %}只看当前盒子里的内容。点左侧别的盒子可以继续切换。{% else %}按内容类型分卡片显示。先看图、看标题、看建议盒子，再决定放哪里。{% endif %}</p>
       </div>
 
       <div class="inbox-grid">
-        {% if inbox_items %}
-          {% for item in inbox_items %}
+        {% set visible_items = selected_box_items if selected_box else inbox_items %}
+        {% if visible_items %}
+          {% for item in visible_items %}
           {% include "partials/workbench_card.html" %}
           {% endfor %}
         {% else %}
         <article class="work-card">
           <div class="work-copy">
-            <h3>大口袋现在是空的</h3>
-            <p class="line">可以直接粘贴链接、图片、文字，或者点上面的按钮把内容放进来。</p>
+            <h3>{% if selected_box %}这个盒子里还没有内容{% else %}大口袋现在是空的{% endif %}</h3>
+            <p class="line">{% if selected_box %}先从大口袋拖一些内容进来，或者切到别的盒子看看。{% else %}可以直接粘贴链接、图片、文字，或者点上面的按钮把内容放进来。{% endif %}</p>
           </div>
         </article>
         {% endif %}
@@ -551,6 +592,39 @@
 <div id="imageLightbox" class="image-lightbox" aria-hidden="true">
   <img id="lightboxImage" alt="图片放大预览">
 </div>
+
+<div id="boxOverlay" class="quick-overlay" aria-hidden="true">
+  <div class="mini-modal">
+    <div class="quick-header">
+      <div>
+        <h3>新建盒子</h3>
+        <p class="meta">先建一个主题目的地，后面拖放和建议才会更顺手。</p>
+      </div>
+      <button id="closeBoxModalBtn" class="btn" type="button">关闭</button>
+    </div>
+
+    <form id="boxForm" class="mini-form">
+      <div class="field-group">
+        <label for="box-name">盒子名称</label>
+        <input id="box-name" name="name" class="field" placeholder="例如：产品灵感" required>
+      </div>
+      <div class="grid-2">
+        <div class="field-group">
+          <label for="box-color">盒子颜色</label>
+          <input id="box-color" name="color" class="field" type="color" value="#f97316">
+        </div>
+        <div class="field-group">
+          <label for="box-description">一句说明</label>
+          <input id="box-description" name="description" class="field" placeholder="收纳产品方向内容">
+        </div>
+      </div>
+      <p id="boxHint" class="hint">名字尽量短，拖放时更好认。</p>
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">创建盒子</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -573,6 +647,11 @@ const pastedPreview = document.getElementById("pastedPreview");
 const imageLightbox = document.getElementById("imageLightbox");
 const lightboxImage = document.getElementById("lightboxImage");
 const showSortedToggle = document.getElementById("showSortedToggle");
+const boxOverlay = document.getElementById("boxOverlay");
+const openBoxModalBtn = document.getElementById("openBoxModalBtn");
+const closeBoxModalBtn = document.getElementById("closeBoxModalBtn");
+const boxForm = document.getElementById("boxForm");
+const boxHint = document.getElementById("boxHint");
 
 let pastedClipboardFile = null;
 let pastedPreviewUrl = "";
@@ -606,6 +685,18 @@ function closeQuickModal() {
   pastedClipboardFile = null;
   setPastedFileBadge(null);
   setPastedPreview(null);
+}
+
+function openBoxModal() {
+  boxOverlay.classList.add("active");
+  boxOverlay.setAttribute("aria-hidden", "false");
+}
+
+function closeBoxModal() {
+  boxOverlay.classList.remove("active");
+  boxOverlay.setAttribute("aria-hidden", "true");
+  boxHint.textContent = "名字尽量短，拖放时更好认。";
+  boxHint.className = "hint";
 }
 
 function firstUrl(text) {
@@ -720,10 +811,17 @@ document.addEventListener("paste", async (event) => {
 
 if (openQuickBtn) openQuickBtn.addEventListener("click", openQuickModal);
 if (openQuickBtnInline) openQuickBtnInline.addEventListener("click", openQuickModal);
+if (openBoxModalBtn) openBoxModalBtn.addEventListener("click", openBoxModal);
 closeQuickBtn.addEventListener("click", closeQuickModal);
 quickOverlay.addEventListener("click", (event) => {
   if (event.target === quickOverlay) closeQuickModal();
 });
+if (closeBoxModalBtn) closeBoxModalBtn.addEventListener("click", closeBoxModal);
+if (boxOverlay) {
+  boxOverlay.addEventListener("click", (event) => {
+    if (event.target === boxOverlay) closeBoxModal();
+  });
+}
 
 document.getElementById("fetchTitleBtn").addEventListener("click", async () => {
   const url = firstUrl(quickContent.value);
@@ -779,6 +877,29 @@ quickForm.addEventListener("submit", async (event) => {
   window.location.reload();
 });
 
+if (boxForm) {
+  boxForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      name: document.getElementById("box-name").value,
+      color: document.getElementById("box-color").value,
+      description: document.getElementById("box-description").value,
+    };
+    const response = await fetch("/api/boxes", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      boxHint.textContent = data.error || "创建盒子失败";
+      boxHint.className = "error";
+      return;
+    }
+    window.location.reload();
+  });
+}
+
 async function placeItem(itemId, boxId) {
   const response = await fetch(`/api/items/${itemId}/place`, {
     method: "POST",
@@ -793,8 +914,24 @@ async function placeItem(itemId, boxId) {
   window.location.reload();
 }
 
+async function moveItemBack(itemId) {
+  const response = await fetch(`/api/items/${itemId}/move-back`, {
+    method: "POST",
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    alert(data.error || "移回大口袋失败");
+    return;
+  }
+  window.location.reload();
+}
+
 Array.from(document.querySelectorAll(".quick-place-btn, .suggestion-chip")).forEach((button) => {
   button.addEventListener("click", () => placeItem(button.dataset.itemId, button.dataset.boxId));
+});
+
+Array.from(document.querySelectorAll(".move-back-btn")).forEach((button) => {
+  button.addEventListener("click", () => moveItemBack(button.dataset.itemId));
 });
 
 Array.from(document.querySelectorAll(".work-card")).forEach((card) => {
@@ -807,6 +944,16 @@ Array.from(document.querySelectorAll(".work-card")).forEach((card) => {
 });
 
 Array.from(document.querySelectorAll(".box-dropzone[data-box-id]")).forEach((box) => {
+  box.addEventListener("click", () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("box_id", box.dataset.boxId);
+    if (showSortedToggle && showSortedToggle.checked) {
+      url.searchParams.set("show_sorted", "1");
+    } else {
+      url.searchParams.delete("show_sorted");
+    }
+    window.location.href = url.toString();
+  });
   box.addEventListener("dragover", (event) => {
     event.preventDefault();
     box.classList.add("drag-over");

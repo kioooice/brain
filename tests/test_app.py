@@ -1,4 +1,7 @@
-﻿import tempfile
+﻿import gc
+import sqlite3
+import tempfile
+import time
 import unittest
 from io import BytesIO
 from pathlib import Path
@@ -69,7 +72,15 @@ class TestAppCase(unittest.TestCase):
             db.session.remove()
             db.drop_all()
             db.engine.dispose()
-        self.temp_dir.cleanup()
+        self.client = None
+        self.app = None
+        for _ in range(3):
+            try:
+                self.temp_dir.cleanup()
+                break
+            except (PermissionError, NotADirectoryError):
+                gc.collect()
+                time.sleep(0.05)
 
     def test_index_page_renders(self):
         response = self.client.get("/")
@@ -92,6 +103,76 @@ class TestAppCase(unittest.TestCase):
         self.assertIn("未整理", html)
         self.assertIn("主题盒子", html)
         self.assertIn("一键放入", html)
+        self.assertIn("新建盒子", html)
+
+    def test_create_box_api_creates_new_box(self):
+        response = self.client.post(
+            "/api/boxes",
+            json={
+                "name": "设计参考",
+                "color": "#2563eb",
+                "description": "收纳视觉和界面方向",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["box"]["name"], "设计参考")
+
+        with self.app.app_context():
+            box = Box.query.filter_by(name="设计参考").first()
+            self.assertIsNotNone(box)
+            self.assertEqual(box.color, "#2563eb")
+
+    def test_create_box_api_rejects_blank_name(self):
+        response = self.client.post("/api/boxes", json={"name": "   "})
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+
+    def test_open_box_shows_box_contents_on_index(self):
+        with self.app.app_context():
+            box = Box(name="设计参考", color="#2563eb")
+            db.session.add(box)
+            db.session.commit()
+            box_id = box.id
+
+            first = db.session.get(Inspiration, self.first_id)
+            first.place_into_box(box)
+            db.session.commit()
+
+        response = self.client.get(f"/?box_id={box_id}&show_sorted=1")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("设计参考", html)
+        self.assertIn("盒子内容", html)
+        self.assertIn("Alpha idea", html)
+        self.assertNotIn("Beta note", html)
+        self.assertIn('class="btn move-back-btn"', html)
+        self.assertIn(f'data-item-id="{self.first_id}"', html)
+
+    def test_open_box_exposes_previous_and_next_box_links(self):
+        with self.app.app_context():
+            first_box = Box(name="收集", color="#f97316", sort_order=1)
+            second_box = Box(name="设计参考", color="#2563eb", sort_order=2)
+            third_box = Box(name="实现想法", color="#22c55e", sort_order=3)
+            db.session.add_all([first_box, second_box, third_box])
+            db.session.commit()
+            first_box_id = first_box.id
+            second_box_id = second_box.id
+            third_box_id = third_box.id
+
+        response = self.client.get(f"/?box_id={second_box_id}&show_sorted=1")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("上一个盒子", html)
+        self.assertIn("下一个盒子", html)
+        self.assertIn(f'href="/?box_id={first_box_id}&amp;show_sorted=1"', html)
+        self.assertIn(f'href="/?box_id={third_box_id}&amp;show_sorted=1"', html)
 
     def test_items_api_returns_seeded_data(self):
         response = self.client.get("/api/items")
@@ -436,6 +517,68 @@ class TestAppCase(unittest.TestCase):
         self.assertIn(payload["category"], {"", CATEGORY_PRODUCT})
         self.assertIn("AI", payload["tags"])
         self.assertIn(TAG_AUTOMATION, payload["tags"])
+
+    def test_create_app_migrates_legacy_sqlite_schema(self):
+        legacy_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(legacy_dir.cleanup)
+        legacy_root = Path(legacy_dir.name)
+        legacy_db_path = legacy_root / "instance" / "legacy.db"
+        legacy_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        conn = sqlite3.connect(legacy_db_path)
+        conn.execute(
+            """
+            CREATE TABLE inspiration (
+                id INTEGER NOT NULL PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                content TEXT,
+                content_type VARCHAR(50) NOT NULL,
+                file_path VARCHAR(500),
+                source VARCHAR(200),
+                category VARCHAR(100),
+                tags VARCHAR(500),
+                status VARCHAR(50) NOT NULL,
+                notes TEXT,
+                children TEXT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO inspiration (
+                title, content, content_type, source, category, tags, status, notes, children, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            """,
+            ("Legacy item", "hello", TYPE_TEXT, "Notebook", "开发", "legacy", STATUS_INBOX, "", None),
+        )
+        conn.commit()
+        conn.close()
+
+        app = create_app(
+            {
+                "TESTING": True,
+                "SQLALCHEMY_DATABASE_URI": f"sqlite:///{legacy_db_path.as_posix()}",
+                "UPLOAD_FOLDER": str(legacy_root / "uploads"),
+            }
+        )
+
+        migrated_conn = sqlite3.connect(legacy_db_path)
+        columns = {row[1] for row in migrated_conn.execute("PRAGMA table_info(inspiration)").fetchall()}
+        tables = {row[0] for row in migrated_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        migrated_conn.close()
+
+        self.assertIn("box_id", columns)
+        self.assertIn("is_inbox", columns)
+        self.assertIn("box", tables)
+
+        response = app.test_client().get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Legacy item", response.get_data(as_text=True))
+        with app.app_context():
+            db.session.remove()
+            db.engine.dispose()
 
 
 if __name__ == "__main__":

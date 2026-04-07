@@ -1,4 +1,6 @@
+import gc
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -42,7 +44,15 @@ class TestMobileApiCase(unittest.TestCase):
             db.session.remove()
             db.drop_all()
             db.engine.dispose()
-        self.temp_dir.cleanup()
+        self.client = None
+        self.app = None
+        for _ in range(3):
+            try:
+                self.temp_dir.cleanup()
+                break
+            except (PermissionError, NotADirectoryError):
+                gc.collect()
+                time.sleep(0.05)
 
     def test_meta_endpoint(self):
         response = self.client.get("/api/meta")

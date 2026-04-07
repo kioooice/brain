@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -20,6 +21,36 @@ else:
 UPLOAD_DIR = APP_BASE_DIR / "uploads"
 DATABASE_PATH = APP_BASE_DIR / "instance" / "inspirations.db"
 TEMPLATE_DIR = RESOURCE_DIR / "templates"
+
+
+def _sqlite_database_path(database_uri: str) -> Path | None:
+    if not database_uri.startswith("sqlite:///"):
+        return None
+    return Path(database_uri.removeprefix("sqlite:///"))
+
+
+def _migrate_sqlite_workbench_schema(database_uri: str) -> None:
+    database_path = _sqlite_database_path(database_uri)
+    if not database_path or not database_path.exists():
+        return
+
+    with sqlite3.connect(database_path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "inspiration" not in tables:
+            return
+
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(inspiration)").fetchall()
+        }
+        if "box_id" not in columns:
+            connection.execute("ALTER TABLE inspiration ADD COLUMN box_id INTEGER")
+        if "is_inbox" not in columns:
+            connection.execute("ALTER TABLE inspiration ADD COLUMN is_inbox BOOLEAN NOT NULL DEFAULT 1")
+        connection.commit()
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -49,5 +80,6 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        _migrate_sqlite_workbench_schema(app.config["SQLALCHEMY_DATABASE_URI"])
 
     return app
