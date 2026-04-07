@@ -25,20 +25,10 @@ python app.py
 它会启动源码版服务，Flask 自带热重载，保存文件后通常不用重新打包就能看到变化，
 并且会自动打开浏览器，命令行会最小化在后台运行。
 
-## 软件形式
-
-你可以直接双击 [start.bat](/D:/02-Projects/brain/start.bat)，它会后台启动并自动打开浏览器。
-
-如果想打包成真正的 Windows 程序，运行 [build.bat](/D:/02-Projects/brain/build.bat) 后，会生成 `dist/LingganShouji.exe`。
-之后你只要双击这个 `exe` 就行，不需要再开终端。
-
-新版本会优先打开原生窗口；如果机器缺少 WebView 运行时，会自动退回浏览器。
-
 ## 推荐流程
 
 - 日常开发：用 [dev.bat](/D:/02-Projects/brain/dev.bat)
-- 体验软件壳：用 [start.bat](/D:/02-Projects/brain/start.bat)
-- 正式打包：用 [build.bat](/D:/02-Projects/brain/build.bat)
+- 临时直接运行：用 `python app.py`
 
 ## 技术栈
 
@@ -46,28 +36,3 @@ python app.py
 - Flask-SQLAlchemy
 - SQLite
 - 原生 HTML / CSS / JavaScript
-
-## Windows + Android Client (Flutter)
-
-This repository now includes a starter mobile/desktop client at `flutter_app/`.
-
-- Install stable Flutter SDK first.
-- In `flutter_app/`, run:
-
-```bash
-flutter create . --platforms=windows,android
-flutter pub get
-```
-
-- Or run `flutter_app/setup.bat` on Windows.
-- Start backend API with `run_mobile_api.bat` (listens on `0.0.0.0:5001`).
-
-Run examples:
-
-```bash
-# Windows
-flutter run -d windows
-
-# Android device (replace with your LAN IP)
-flutter run --dart-define=API_BASE_URL=http://192.168.1.100:5001
-```
