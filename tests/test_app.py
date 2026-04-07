@@ -7,7 +7,12 @@ from unittest.mock import patch
 from brain_app import create_app
 from brain_app.extensions import db
 from brain_app.models import Box, Inspiration
-from brain_app.services import extract_title_from_url
+from brain_app.services import (
+    extract_title_from_url,
+    get_inbox_items,
+    place_item_into_box,
+    suggest_boxes_for_item,
+)
 from brain_app.constants import STATUS_DONE, STATUS_INBOX, STATUS_TODO, TYPE_IMAGE, TYPE_LINK, TYPE_TEXT
 
 CATEGORY_PRODUCT = "产品"
@@ -119,6 +124,43 @@ class TestAppCase(unittest.TestCase):
             self.assertEqual(item_dict["box_id"], box.id)
             self.assertEqual(item_dict["box_name"], "产品灵感")
             self.assertFalse(item_dict["is_inbox"])
+
+    def test_suggest_boxes_prefers_matching_category_and_tags(self):
+        with self.app.app_context():
+            product_box = Box(name="产品灵感", color="#f97316", description="产品方向")
+            design_box = Box(name="设计参考", color="#2563eb", description="界面")
+            db.session.add_all([product_box, design_box])
+            db.session.commit()
+
+            item = Inspiration(
+                title="AI 产品首页拆解",
+                content="Landing page inspiration",
+                category="产品",
+                tags="AI, 产品, 设计",
+            )
+            db.session.add(item)
+            db.session.commit()
+
+            suggestions = suggest_boxes_for_item(item)
+
+            self.assertGreaterEqual(len(suggestions), 1)
+            self.assertEqual(suggestions[0]["name"], "产品灵感")
+            self.assertLessEqual(len(suggestions), 3)
+
+    def test_get_inbox_items_excludes_sorted_items_by_default(self):
+        with self.app.app_context():
+            box = Box(name="内容选题", color="#22c55e")
+            db.session.add(box)
+            db.session.commit()
+
+            item = db.session.get(Inspiration, self.first_id)
+            place_item_into_box(item, box.id)
+
+            inbox_items = get_inbox_items()
+            all_items = get_inbox_items(show_sorted=True)
+
+            self.assertEqual([record.id for record in inbox_items], [self.second_id])
+            self.assertEqual({record.id for record in all_items}, {self.first_id, self.second_id})
 
     def test_batch_delete_removes_records(self):
         response = self.client.post(

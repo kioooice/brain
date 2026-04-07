@@ -28,7 +28,7 @@ from .constants import (
     TYPE_VIDEO,
 )
 from .extensions import db
-from .models import Inspiration
+from .models import Box, Inspiration
 
 DEFAULT_TITLE = "未命名灵感"
 
@@ -157,6 +157,72 @@ def get_stats() -> dict[str, int]:
     for status in STATUSES:
         stats[status] = counts.get(status, 0)
     return stats
+
+
+def get_boxes() -> list[Box]:
+    return Box.query.order_by(Box.sort_order.asc(), Box.created_at.asc()).all()
+
+
+def get_inbox_items(show_sorted: bool = False) -> list[Inspiration]:
+    query = Inspiration.query.order_by(Inspiration.created_at.desc())
+    if not show_sorted:
+        query = query.filter(Inspiration.is_inbox.is_(True))
+    return query.all()
+
+
+def normalize_box_tokens(text: str) -> set[str]:
+    tokens = re.split(r"[\s,，/|]+", (text or "").strip().lower())
+    return {token for token in tokens if token}
+
+
+def suggest_boxes_for_item(item: Inspiration, limit: int = 3) -> list[dict]:
+    if not item:
+        return []
+
+    item_terms = normalize_box_tokens(" ".join([item.title or "", item.category or "", item.tags or "", item.source or ""]))
+    scored_boxes: list[dict] = []
+
+    for box in get_boxes():
+        score = 0
+        box_terms = normalize_box_tokens(" ".join([box.name or "", box.description or ""]))
+
+        overlap = item_terms & box_terms
+        score += len(overlap)
+
+        if item.category and item.category in (box.name or ""):
+            score += 3
+        if item.category and item.category in (box.description or ""):
+            score += 1
+
+        if item.source and item.source in (box.name or ""):
+            score += 1
+
+        if score > 0:
+            scored_boxes.append(
+                {
+                    "id": box.id,
+                    "name": box.name,
+                    "color": box.color,
+                    "description": box.description or "",
+                    "score": score,
+                }
+            )
+
+    scored_boxes.sort(key=lambda box: (-box["score"], box["name"]))
+    return scored_boxes[:limit]
+
+
+def place_item_into_box(item: Inspiration, box_id: int) -> Inspiration:
+    if not item:
+        raise ValueError("灵感不存在")
+
+    box = db.session.get(Box, box_id)
+    if not box:
+        raise ValueError("盒子不存在")
+
+    item.place_into_box(box)
+    db.session.commit()
+    return item
 
 
 def filter_items(category_filter: str, type_filter: str, status_filter: str, search: str) -> list[Inspiration]:
