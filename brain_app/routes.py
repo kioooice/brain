@@ -24,6 +24,7 @@ from .services import (
     place_item_into_box,
     normalize_status,
     save_uploaded_file,
+    suggest_boxes_for_item,
     validate_outbound_url,
 )
 
@@ -48,7 +49,14 @@ def index():
 
     items = filter_items(category_filter, type_filter, status_filter, search)
     serialized_items = [serialize_item(item) for item in items]
-    inbox_items = [serialize_item(item) for item in get_inbox_items(show_sorted=show_sorted)]
+    inbox_source_items = items if any((category_filter, type_filter, status_filter, search)) else get_inbox_items(show_sorted=show_sorted)
+    if not show_sorted and any((category_filter, type_filter, status_filter, search)):
+        inbox_source_items = [item for item in inbox_source_items if item.is_inbox]
+    inbox_items = []
+    for item in inbox_source_items:
+        item_dict = serialize_item(item)
+        item_dict["suggested_boxes"] = suggest_boxes_for_item(item)
+        inbox_items.append(item_dict)
 
     return render_template(
         "index.html",

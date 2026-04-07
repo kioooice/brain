@@ -79,6 +79,20 @@ class TestAppCase(unittest.TestCase):
         self.assertIn(APP_TITLE, html)
         self.assertIn("Alpha idea", html)
 
+    def test_index_renders_workbench_sections_and_actions(self):
+        with self.app.app_context():
+            box = Box(name="产品灵感", color="#f97316", description="收纳产品方向内容")
+            db.session.add(box)
+            db.session.commit()
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("未整理", html)
+        self.assertIn("主题盒子", html)
+        self.assertIn("一键放入", html)
+
     def test_items_api_returns_seeded_data(self):
         response = self.client.get("/api/items")
 

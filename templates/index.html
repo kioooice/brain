@@ -4,7 +4,8 @@
 
 {% block head %}
 <style>
-  .sidebar-tool {
+  .sidebar-tool,
+  .sidebar-box-guide {
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background: rgba(255, 255, 255, 0.78);
@@ -37,81 +38,177 @@
     color: var(--muted);
   }
 
-  .toolbar-wrap {
-    margin-bottom: 12px;
+  .workbench-shell {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
   }
 
-  .toolbar {
+  .box-rail,
+  .capture-panel,
+  .inbox-panel {
+    padding: 18px;
+  }
+
+  .section-head {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .section-head h2 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+  }
+
+  .section-head p,
+  .meta,
+  .line {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .box-rail-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .box-dropzone {
     width: 100%;
-    border: 1px solid var(--line);
+    display: grid;
+    gap: 4px;
+    text-align: left;
+    border: 1px solid color-mix(in srgb, var(--box-color) 28%, white);
     border-radius: 16px;
-    background: rgba(255, 255, 255, 0.72);
-    padding: 8px;
+    padding: 14px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--box-color) 10%, white), rgba(255, 255, 255, 0.9));
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+
+  .box-dropzone strong {
+    font-size: 16px;
+  }
+
+  .box-dropzone.drag-over {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--box-color) 62%, white);
+    box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+  }
+
+  .workbench-main {
     display: grid;
-    gap: 8px;
+    gap: 16px;
   }
 
-  .toolbar .field,
-  .toolbar .select {
-    padding: 10px 12px;
-  }
-
-  .toolbar .btn {
-    min-height: 36px;
-    padding: 8px 12px;
-  }
-
-  .toolbar-row {
+  .capture-panel {
     display: grid;
-    grid-template-columns: minmax(220px, 1.4fr) 120px 120px 120px;
-    gap: 8px;
+    gap: 14px;
+    background:
+      radial-gradient(circle at top left, rgba(249, 115, 22, 0.16), transparent 38%),
+      rgba(255, 255, 255, 0.78);
   }
 
-  .toolbar-actions {
+  .capture-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    justify-content: flex-start;
+    gap: 10px;
+    align-items: center;
   }
 
-  .cards {
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.86);
+  }
+
+  .inbox-panel {
+    display: grid;
+    gap: 16px;
+  }
+
+  .inbox-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+
+  .work-card {
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  }
+
+  .work-card:hover,
+  .work-card.dragging {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+    border-color: rgba(249, 115, 22, 0.22);
+  }
+
+  .work-card-head,
+  .suggestion-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .type-pill,
+  .box-pill,
+  .tag-chip,
+  .suggestion-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .type-pill {
+    padding: 7px 10px;
+    background: rgba(15, 23, 42, 0.06);
+    color: #0f172a;
+    font-weight: 700;
+  }
+
+  .box-pill {
+    padding: 7px 10px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #166534;
+    font-weight: 700;
+  }
+
+  .work-card-body {
+    display: grid;
     gap: 12px;
   }
 
-  .card {
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 14px;
-    background: rgba(255, 255, 255, 0.78);
+  .work-copy {
     display: grid;
     gap: 8px;
-    align-content: start;
-    overflow: visible;
   }
 
-  .card h3 {
+  .work-copy h3 {
     margin: 0;
-    font-size: 22px;
+    font-size: 20px;
     line-height: 1.35;
     word-break: break-word;
   }
-
-  .meta { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
-  .line { margin: 4px 0; color: #1f2937; word-break: break-word; display: grid; gap: 8px; }
-
-  .group-list { display: grid; gap: 8px; }
-  .group-item {
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.86);
-    padding: 10px;
-    display: grid;
-    gap: 6px;
-  }
-
-  .group-item-title { margin: 0; font-size: 14px; font-weight: 700; }
 
   .open-link {
     display: inline-flex;
@@ -127,14 +224,56 @@
 
   .card-media {
     width: 100%;
-    max-height: 240px;
+    max-height: 260px;
     object-fit: cover;
-    border-radius: 12px;
+    border-radius: 14px;
     border: 1px solid var(--line);
     background: #fff;
   }
 
   .card-media.zoomable { cursor: zoom-in; }
+
+  .bundle-preview {
+    border: 1px dashed rgba(249, 115, 22, 0.32);
+    border-radius: 16px;
+    background: rgba(249, 115, 22, 0.08);
+    padding: 16px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .suggestions,
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .suggestion-chip {
+    border: 1px solid rgba(249, 115, 22, 0.24);
+    background: rgba(249, 115, 22, 0.09);
+    color: #9a3412;
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+
+  .tag-chip {
+    padding: 7px 10px;
+    background: rgba(15, 23, 42, 0.06);
+    color: #334155;
+  }
+
+  .tag-chip.muted,
+  .suggestion-empty {
+    color: var(--muted);
+  }
+
+  .clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 
   .quick-overlay {
     position: fixed;
@@ -221,12 +360,17 @@
   }
 
   @media (max-width: 1180px) {
-    .toolbar-row { grid-template-columns: 1fr 1fr; }
+    .workbench-shell { grid-template-columns: 1fr; }
+    .box-rail { order: 2; }
   }
 
   @media (max-width: 980px) {
-    .toolbar-row { grid-template-columns: 1fr; }
-    .cards { grid-template-columns: 1fr; }
+    .inbox-grid { grid-template-columns: 1fr; }
+    .suggestion-head,
+    .capture-actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
   }
 </style>
 {% endblock %}
@@ -235,8 +379,14 @@
 <section class="sidebar-tool">
   <div class="eyebrow">快速入口</div>
   <h3 class="tool-title">快速记录</h3>
-  <p class="tool-desc">按 Ctrl+V 或点按钮打开记录框。</p>
+  <p class="tool-desc">先把内容扔进大口袋，再慢慢整理进盒子。</p>
   <button id="openQuickBtn" class="btn btn-primary" type="button">打开快速记录</button>
+</section>
+
+<section class="sidebar-box-guide">
+  <div class="eyebrow">整理方式</div>
+  <h3 class="tool-title">拖进去，或者一键放入</h3>
+  <p class="tool-desc">每张卡片会给出建议盒子和标签。你可以直接拖到左侧盒子，也可以点卡片上的快捷按钮。</p>
 </section>
 {% endblock %}
 
@@ -247,100 +397,67 @@
   {% endfor %}
 </datalist>
 
-<section class="toolbar-wrap">
-  <form class="toolbar" method="get">
-    <div class="toolbar-row">
-      <input id="search" name="search" class="field" value="{{ search }}" placeholder="搜索：标题 / 内容 / 标签 / 备注">
-      <select id="category" name="category" class="select">
-        <option value="">全部分类</option>
-        {% for category in categories %}
-        <option value="{{ category }}" {% if category == current_category %}selected{% endif %}>{{ category }}</option>
-        {% endfor %}
-      </select>
-      <select id="type" name="type" class="select">
-        <option value="">全部类型</option>
-        {% for type in content_types %}
-        <option value="{{ type }}" {% if type == current_type %}selected{% endif %}>{{ type }}</option>
-        {% endfor %}
-      </select>
-      <select id="status" name="status" class="select">
-        <option value="">全部状态</option>
-        {% for status in statuses %}
-        <option value="{{ status }}" {% if status == current_status %}selected{% endif %}>{{ status }}</option>
-        {% endfor %}
-      </select>
+<section class="workbench-shell">
+  <aside class="panel box-rail">
+    <div class="section-head">
+      <div class="eyebrow">主题盒子</div>
+      <h2>主题盒子</h2>
+      <p>把大口袋里的内容拖进这里，或者点卡片上的一键放入。</p>
     </div>
-    <div class="toolbar-actions">
-      <a class="btn" href="{{ url_for('main.index') }}">清空</a>
-      <button class="btn btn-primary" type="submit">筛选</button>
-      <button class="btn" type="button" id="selectAllBtn">全选</button>
-      <button class="btn" type="button" id="mergeBtn">合并</button>
-      <button class="btn btn-danger" type="button" id="deleteBtn">删除</button>
+    <div class="box-rail-grid">
+      {% for box in boxes %}
+      <button class="box-dropzone" data-box-id="{{ box.id }}" type="button" style="--box-color: {{ box.color }};">
+        <strong>{{ box.name }}</strong>
+        <span class="meta">{{ box.item_count }} 项{% if box.description %} · {{ box.description }}{% endif %}</span>
+      </button>
+      {% else %}
+      <div class="box-dropzone" style="--box-color: #94a3b8;">
+        <strong>还没有主题盒子</strong>
+        <span class="meta">先补几个盒子，建议和拖拽才会有目的地。</span>
+      </div>
+      {% endfor %}
     </div>
-  </form>
-</section>
+  </aside>
 
-<section class="cards" id="cardsMount">
-  {% if items %}
-    {% for item in items %}
-    <article class="card">
-      <input class="selection" type="checkbox" value="{{ item.id }}">
-      <h3>{{ item.title }}</h3>
-      <p class="meta">{{ item.content_type }}{% if item.category %} · {{ item.category }}{% endif %} · {{ item.status }}</p>
-      <div class="line">
-        {% if item.children %}
-        <div class="group-list">
-          {% for child in item.children %}
-          <div class="group-item">
-            <p class="group-item-title">{{ child.title or "未命名子项" }}</p>
-            <p class="meta">{{ child.content_type }}{% if child.source %} · {{ child.source }}{% endif %}</p>
-            {% if child.file_path and child.file_path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) %}
-            <img class="card-media zoomable" src="{{ url_for('main.uploaded_file', filename=child.file_path) }}" alt="{{ child.title or '图片' }}">
-            {% elif child.file_path and child.file_path.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) %}
-            <video class="card-media" controls src="{{ url_for('main.uploaded_file', filename=child.file_path) }}"></video>
-            {% elif child.open_url %}
-            <a class="open-link" href="{{ child.open_url }}" target="_blank" rel="noreferrer">打开链接</a>
-            <p class="meta">{{ child.content or child.notes or "暂无内容" }}</p>
-            {% else %}
-            <p class="meta">{{ child.content or child.notes or "暂无内容" }}</p>
-            {% endif %}
-          </div>
+  <div class="workbench-main">
+    <section class="panel capture-panel">
+      <div class="section-head">
+        <div class="eyebrow">大口袋</div>
+        <h2>未整理</h2>
+        <p>所有新内容先放这里。看一眼，拖进去，或者一键归位。</p>
+      </div>
+      <div class="capture-actions">
+        <button id="openQuickBtnInline" class="btn btn-primary" type="button">快速放入内容</button>
+        <label class="toggle">
+          <input id="showSortedToggle" type="checkbox" {% if show_sorted %}checked{% endif %}>
+          <span>显示已归位内容</span>
+        </label>
+        <span class="meta">当前共 {{ inbox_items|length }} 条可见内容</span>
+      </div>
+    </section>
+
+    <section class="panel inbox-panel">
+      <div class="section-head">
+        <h2>未整理内容</h2>
+        <p>按内容类型分卡片显示。先看图、看标题、看建议盒子，再决定放哪里。</p>
+      </div>
+
+      <div class="inbox-grid">
+        {% if inbox_items %}
+          {% for item in inbox_items %}
+          {% include "partials/workbench_card.html" %}
           {% endfor %}
-        </div>
-        {% elif item.file_path and item.file_path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) %}
-        <img class="card-media zoomable" src="{{ url_for('main.uploaded_file', filename=item.file_path) }}" alt="{{ item.title }}">
-        {% elif item.file_path and item.file_path.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) %}
-        <video class="card-media" controls src="{{ url_for('main.uploaded_file', filename=item.file_path) }}"></video>
-        {% elif item.open_url %}
-        <a class="open-link" href="{{ item.open_url }}" target="_blank" rel="noreferrer">打开链接</a>
-        <p class="meta">{{ item.content or item.notes or "暂无内容" }}</p>
         {% else %}
-        {{ item.content or item.notes or "暂无内容" }}
+        <article class="work-card">
+          <div class="work-copy">
+            <h3>大口袋现在是空的</h3>
+            <p class="line">可以直接粘贴链接、图片、文字，或者点上面的按钮把内容放进来。</p>
+          </div>
+        </article>
         {% endif %}
       </div>
-      <p class="meta">创建于 {{ item.created_at }}{% if item.source %} · 来源 {{ item.source }}{% endif %}</p>
-      {% if item.tag_list %}
-      <p class="meta">{% for tag in item.tag_list %}#{{ tag }} {% endfor %}</p>
-      {% endif %}
-      <div class="actions">
-        <a class="btn" href="{{ url_for('main.edit_item', item_id=item.id) }}">编辑</a>
-        <button class="btn btn-danger single-delete" type="button" data-id="{{ item.id }}">删除</button>
-        <label class="meta">状态
-          <select class="status-select" data-status-id="{{ item.id }}">
-            {% for status in statuses %}
-            <option value="{{ status }}" {% if status == item.status %}selected{% endif %}>{{ status }}</option>
-            {% endfor %}
-          </select>
-        </label>
-      </div>
-    </article>
-    {% endfor %}
-  {% else %}
-    <div class="card">
-      <h3>还没有灵感记录</h3>
-      <p class="meta">在页面任意位置粘贴内容即可开始。</p>
-    </div>
-  {% endif %}
+    </section>
+  </div>
 </section>
 
 <div id="quickOverlay" class="quick-overlay" aria-hidden="true">
@@ -423,6 +540,7 @@
 const quickOverlay = document.getElementById("quickOverlay");
 const quickForm = document.getElementById("quickForm");
 const openQuickBtn = document.getElementById("openQuickBtn");
+const openQuickBtnInline = document.getElementById("openQuickBtnInline");
 const closeQuickBtn = document.getElementById("closeQuickBtn");
 const quickContent = document.getElementById("quick-content");
 const quickTitle = document.getElementById("quick-title");
@@ -436,6 +554,7 @@ const pastedFileBadge = document.getElementById("pastedFileBadge");
 const pastedPreview = document.getElementById("pastedPreview");
 const imageLightbox = document.getElementById("imageLightbox");
 const lightboxImage = document.getElementById("lightboxImage");
+const showSortedToggle = document.getElementById("showSortedToggle");
 
 let pastedClipboardFile = null;
 let pastedPreviewUrl = "";
@@ -581,9 +700,8 @@ document.addEventListener("paste", async (event) => {
   }
 });
 
-if (openQuickBtn) {
-  openQuickBtn.addEventListener("click", openQuickModal);
-}
+if (openQuickBtn) openQuickBtn.addEventListener("click", openQuickModal);
+if (openQuickBtnInline) openQuickBtnInline.addEventListener("click", openQuickModal);
 closeQuickBtn.addEventListener("click", closeQuickModal);
 quickOverlay.addEventListener("click", (event) => {
   if (event.target === quickOverlay) closeQuickModal();
@@ -643,70 +761,58 @@ quickForm.addEventListener("submit", async (event) => {
   window.location.reload();
 });
 
-Array.from(document.querySelectorAll(".single-delete")).forEach((button) => {
-  button.addEventListener("click", async () => {
-    if (!confirm("确认删除这条记录吗？")) return;
-    const id = button.dataset.id;
-    const response = await fetch(`/delete/${id}`, {method: "POST"});
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      alert(data.error || "删除失败");
-      return;
-    }
-    window.location.reload();
+async function placeItem(itemId, boxId) {
+  const response = await fetch(`/api/items/${itemId}/place`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({box_id: Number(boxId)})
   });
-});
-
-Array.from(document.querySelectorAll(".status-select")).forEach((select) => {
-  select.addEventListener("change", async () => {
-    const id = select.dataset.statusId;
-    const status = select.value;
-    const response = await fetch(`/api/status/${id}`, {
-      method: "PUT",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({status})
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) alert(data.error || "状态更新失败");
-  });
-});
-
-function selectedIds() {
-  return Array.from(document.querySelectorAll(".selection:checked")).map((el) => Number(el.value));
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    alert(data.error || "放入盒子失败");
+    return;
+  }
+  window.location.reload();
 }
 
-document.getElementById("selectAllBtn").addEventListener("click", () => {
-  const boxes = Array.from(document.querySelectorAll(".selection"));
-  const allChecked = boxes.length > 0 && boxes.every((box) => box.checked);
-  boxes.forEach((box) => { box.checked = !allChecked; });
+Array.from(document.querySelectorAll(".quick-place-btn, .suggestion-chip")).forEach((button) => {
+  button.addEventListener("click", () => placeItem(button.dataset.itemId, button.dataset.boxId));
 });
 
-document.getElementById("deleteBtn").addEventListener("click", async () => {
-  const ids = selectedIds();
-  if (!ids.length) return alert("请先选择要删除的记录");
-  if (!confirm(`确认删除 ${ids.length} 条记录吗？`)) return;
-  const response = await fetch("/api/batch-delete", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ids})
+Array.from(document.querySelectorAll(".work-card")).forEach((card) => {
+  card.draggable = true;
+  card.addEventListener("dragstart", (event) => {
+    card.classList.add("dragging");
+    event.dataTransfer.setData("text/plain", card.dataset.itemId);
   });
-  const data = await response.json();
-  if (!response.ok || !data.success) return alert(data.error || "删除失败");
-  window.location.reload();
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
 });
 
-document.getElementById("mergeBtn").addEventListener("click", async () => {
-  const ids = selectedIds();
-  if (ids.length < 2) return alert("至少选择两条记录");
-  const response = await fetch("/api/merge", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ids})
+Array.from(document.querySelectorAll(".box-dropzone[data-box-id]")).forEach((box) => {
+  box.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    box.classList.add("drag-over");
   });
-  const data = await response.json();
-  if (!response.ok || !data.success) return alert(data.error || "合并失败");
-  window.location.reload();
+  box.addEventListener("dragleave", () => box.classList.remove("drag-over"));
+  box.addEventListener("drop", (event) => {
+    event.preventDefault();
+    box.classList.remove("drag-over");
+    const itemId = event.dataTransfer.getData("text/plain");
+    if (itemId) placeItem(itemId, box.dataset.boxId);
+  });
 });
+
+if (showSortedToggle) {
+  showSortedToggle.addEventListener("change", () => {
+    const url = new URL(window.location.href);
+    if (showSortedToggle.checked) {
+      url.searchParams.set("show_sorted", "1");
+    } else {
+      url.searchParams.delete("show_sorted");
+    }
+    window.location.href = url.toString();
+  });
+}
 
 document.addEventListener("click", (event) => {
   const target = event.target;
