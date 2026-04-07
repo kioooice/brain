@@ -1,127 +1,728 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
+
+{% block title %}灵感收集{% endblock %}
+
+{% block head %}
+<style>
+  .sidebar-tool {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 255, 255, 0.78);
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(249, 115, 22, 0.14);
+    color: #ea580c;
+    font-size: 12px;
+    font-weight: 700;
+    width: fit-content;
+  }
+
+  .tool-title {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .tool-desc {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .toolbar-wrap {
+    margin-bottom: 12px;
+  }
+
+  .toolbar {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.72);
+    padding: 8px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .toolbar .field,
+  .toolbar .select {
+    padding: 10px 12px;
+  }
+
+  .toolbar .btn {
+    min-height: 36px;
+    padding: 8px 12px;
+  }
+
+  .toolbar-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.4fr) 120px 120px 120px;
+    gap: 8px;
+  }
+
+  .toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+  }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.78);
+    display: grid;
+    gap: 8px;
+    align-content: start;
+    overflow: visible;
+  }
+
+  .card h3 {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  .meta { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .line { margin: 4px 0; color: #1f2937; word-break: break-word; display: grid; gap: 8px; }
+
+  .group-list { display: grid; gap: 8px; }
+  .group-item {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.86);
+    padding: 10px;
+    display: grid;
+    gap: 6px;
+  }
+
+  .group-item-title { margin: 0; font-size: 14px; font-weight: 700; }
+
+  .open-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: #1d4ed8;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    width: fit-content;
+  }
+
+  .card-media {
+    width: 100%;
+    max-height: 240px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+  }
+
+  .card-media.zoomable { cursor: zoom-in; }
+
+  .quick-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.28);
+    backdrop-filter: blur(3px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 18px;
+  }
+
+  .quick-overlay.active { display: flex; }
+
+  .quick-modal {
+    width: min(860px, 100%);
+    max-height: 90vh;
+    overflow: auto;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.20);
+    padding: 18px;
+  }
+
+  .quick-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .quick-header h3 { margin: 0; font-size: 20px; }
+  .quick-form { display: grid; gap: 12px; }
+  .hint { margin: 0; font-size: 13px; color: var(--muted); }
+  .error { margin: 0; font-size: 13px; color: #b91c1c; }
+
+  .paste-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.8);
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .pasted-preview {
+    width: 100%;
+    max-height: 220px;
+    object-fit: contain;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    display: none;
+  }
+
+  .image-lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.78);
+    backdrop-filter: blur(2px);
+    z-index: 70;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .image-lightbox.active { display: flex; }
+
+  .image-lightbox img {
+    max-width: min(96vw, 1500px);
+    max-height: 92vh;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
+    object-fit: contain;
+    background: #fff;
+  }
+
+  @media (max-width: 1180px) {
+    .toolbar-row { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 980px) {
+    .toolbar-row { grid-template-columns: 1fr; }
+    .cards { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block sidebar_extra %}
+<section class="sidebar-tool">
+  <div class="eyebrow">快速入口</div>
+  <h3 class="tool-title">快速记录</h3>
+  <p class="tool-desc">按 Ctrl+V 或点按钮打开记录框。</p>
+  <button id="openQuickBtn" class="btn btn-primary" type="button">打开快速记录</button>
+</section>
+{% endblock %}
 
 {% block content %}
-<div class="header">
-    <div class="header-left">
-        <span class="logo">💡</span>
-        <div>
-            <h1>Inspiration Collector</h1>
-            <div class="header-subtitle">收集灵感，创造未来</div>
-        </div>
-    </div>
-    <a href="/add" class="btn btn-primary">
-        <span>✦</span> 添加灵感
-    </a>
-</div>
+<datalist id="category-list">
+  {% for category in categories %}
+  <option value="{{ category }}">
+  {% endfor %}
+</datalist>
 
-<!-- 统计 -->
-<div class="stats">
-    <div class="stat-card">
-        <div class="stat-num">{{ stats['total'] }}</div>
-        <div class="stat-label">总计</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-num" style="color:#737373">{{ stats['待整理'] }}</div>
-        <div class="stat-label">待整理</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-num" style="color:#3b82f6">{{ stats['待实现'] }}</div>
-        <div class="stat-label">待实现</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-num" style="color:#22c55e">{{ stats['已实现'] }}</div>
-        <div class="stat-label">已实现</div>
-    </div>
-</div>
-
-<!-- 筛选 -->
-<form class="filters" method="get">
-    <input type="text" name="search" placeholder="搜索标题、内容、标签..." value="{{ search }}">
-    <select name="category" onchange="this.form.submit()">
+<section class="toolbar-wrap">
+  <form class="toolbar" method="get">
+    <div class="toolbar-row">
+      <input id="search" name="search" class="field" value="{{ search }}" placeholder="搜索：标题 / 内容 / 标签 / 备注">
+      <select id="category" name="category" class="select">
         <option value="">全部分类</option>
-        {% for cat in categories %}
-        <option value="{{ cat }}" {{ 'selected' if cat == current_category }}>{{ cat }}</option>
+        {% for category in categories %}
+        <option value="{{ category }}" {% if category == current_category %}selected{% endif %}>{{ category }}</option>
         {% endfor %}
-    </select>
-    <select name="type" onchange="this.form.submit()">
+      </select>
+      <select id="type" name="type" class="select">
         <option value="">全部类型</option>
         {% for type in content_types %}
-        <option value="{{ type }}" {{ 'selected' if type == current_type }}>{{ type_icons[type] }} {{ type }}</option>
+        <option value="{{ type }}" {% if type == current_type %}selected{% endif %}>{{ type }}</option>
         {% endfor %}
-    </select>
-    <button type="submit" class="btn btn-secondary">搜索</button>
-    {% if search or current_category or current_type %}
-    <a href="/" class="btn btn-ghost">清除筛选</a>
-    {% endif %}
-</form>
-
-<!-- 内容网格 -->
-{% if items %}
-<div class="grid">
-    {% for item in items %}
-    <div class="card">
-        {% if item.content_type == '图片' and item.file_path %}
-        <img src="/uploads/{{ item.file_path }}" class="card-media" alt="{{ item.title }}">
-        {% elif item.content_type == '视频' and item.file_path %}
-        <video src="/uploads/{{ item.file_path }}" class="card-media" controls></video>
-        {% endif %}
-        
-        <div class="card-body">
-            <div class="card-header">
-                <span class="type-icon">{{ type_icons[item.content_type] }}</span>
-                <div class="card-title">{{ item.title }}</div>
-            </div>
-            
-            {% if item.content %}
-            <div class="card-content">
-                {% if item.content_type == '链接' %}
-                <a href="{{ item.content }}" target="_blank">{{ item.content }}</a>
-                {% else %}
-                {{ item.content }}
-                {% endif %}
-            </div>
-            {% endif %}
-            
-            <div class="card-meta">
-                {% if item.source %}<span>📍 {{ item.source }}</span>{% endif %}
-                {% if item.category %}<span>📁 {{ item.category }}</span>{% endif %}
-                <span>🕐 {{ item.created_at }}</span>
-            </div>
-            
-            {% if item.tags %}
-            <div class="card-tags">
-                {% for tag in item.tags.split(',') %}
-                {% if tag.strip() %}<span class="tag">#{{ tag.strip() }}</span>{% endif %}
-                {% endfor %}
-            </div>
-            {% endif %}
-            
-            <div class="card-actions">
-                <div class="status-dropdown">
-                    <span class="status-badge" style="background:{{ status_colors[item.status] }}" onclick="toggleStatusMenu({{ item.id }})">
-                        {{ item.status }}
-                    </span>
-                    <div class="status-menu" id="status-menu-{{ item.id }}">
-                        {% for s in statuses %}
-                        <div class="status-option" onclick="updateStatus({{ item.id }}, '{{ s }}')">{{ s }}</div>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="card-btns">
-                    <a href="/edit/{{ item.id }}" class="btn btn-ghost btn-sm">编辑</a>
-                    <button class="btn btn-danger btn-sm" onclick="deleteItem({{ item.id }})">删除</button>
-                </div>
-            </div>
-        </div>
+      </select>
+      <select id="status" name="status" class="select">
+        <option value="">全部状态</option>
+        {% for status in statuses %}
+        <option value="{{ status }}" {% if status == current_status %}selected{% endif %}>{{ status }}</option>
+        {% endfor %}
+      </select>
     </div>
+    <div class="toolbar-actions">
+      <a class="btn" href="{{ url_for('main.index') }}">清空</a>
+      <button class="btn btn-primary" type="submit">筛选</button>
+      <button class="btn" type="button" id="selectAllBtn">全选</button>
+      <button class="btn" type="button" id="mergeBtn">合并</button>
+      <button class="btn btn-danger" type="button" id="deleteBtn">删除</button>
+    </div>
+  </form>
+</section>
+
+<section class="cards" id="cardsMount">
+  {% if items %}
+    {% for item in items %}
+    <article class="card">
+      <input class="selection" type="checkbox" value="{{ item.id }}">
+      <h3>{{ item.title }}</h3>
+      <p class="meta">{{ item.content_type }}{% if item.category %} · {{ item.category }}{% endif %} · {{ item.status }}</p>
+      <div class="line">
+        {% if item.children %}
+        <div class="group-list">
+          {% for child in item.children %}
+          <div class="group-item">
+            <p class="group-item-title">{{ child.title or "未命名子项" }}</p>
+            <p class="meta">{{ child.content_type }}{% if child.source %} · {{ child.source }}{% endif %}</p>
+            {% if child.file_path and child.file_path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) %}
+            <img class="card-media zoomable" src="{{ url_for('main.uploaded_file', filename=child.file_path) }}" alt="{{ child.title or '图片' }}">
+            {% elif child.file_path and child.file_path.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) %}
+            <video class="card-media" controls src="{{ url_for('main.uploaded_file', filename=child.file_path) }}"></video>
+            {% elif child.open_url %}
+            <a class="open-link" href="{{ child.open_url }}" target="_blank" rel="noreferrer">打开链接</a>
+            <p class="meta">{{ child.content or child.notes or "暂无内容" }}</p>
+            {% else %}
+            <p class="meta">{{ child.content or child.notes or "暂无内容" }}</p>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% elif item.file_path and item.file_path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")) %}
+        <img class="card-media zoomable" src="{{ url_for('main.uploaded_file', filename=item.file_path) }}" alt="{{ item.title }}">
+        {% elif item.file_path and item.file_path.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) %}
+        <video class="card-media" controls src="{{ url_for('main.uploaded_file', filename=item.file_path) }}"></video>
+        {% elif item.open_url %}
+        <a class="open-link" href="{{ item.open_url }}" target="_blank" rel="noreferrer">打开链接</a>
+        <p class="meta">{{ item.content or item.notes or "暂无内容" }}</p>
+        {% else %}
+        {{ item.content or item.notes or "暂无内容" }}
+        {% endif %}
+      </div>
+      <p class="meta">创建于 {{ item.created_at }}{% if item.source %} · 来源 {{ item.source }}{% endif %}</p>
+      {% if item.tag_list %}
+      <p class="meta">{% for tag in item.tag_list %}#{{ tag }} {% endfor %}</p>
+      {% endif %}
+      <div class="actions">
+        <a class="btn" href="{{ url_for('main.edit_item', item_id=item.id) }}">编辑</a>
+        <button class="btn btn-danger single-delete" type="button" data-id="{{ item.id }}">删除</button>
+        <label class="meta">状态
+          <select class="status-select" data-status-id="{{ item.id }}">
+            {% for status in statuses %}
+            <option value="{{ status }}" {% if status == item.status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </article>
     {% endfor %}
+  {% else %}
+    <div class="card">
+      <h3>还没有灵感记录</h3>
+      <p class="meta">在页面任意位置粘贴内容即可开始。</p>
+    </div>
+  {% endif %}
+</section>
+
+<div id="quickOverlay" class="quick-overlay" aria-hidden="true">
+  <div class="quick-modal">
+    <div class="quick-header">
+      <div>
+        <h3>快速记录</h3>
+        <p class="meta">已捕获粘贴内容，你可以调整后保存。</p>
+      </div>
+      <button id="closeQuickBtn" class="btn" type="button">关闭</button>
+    </div>
+
+    <form id="quickForm" class="quick-form" enctype="multipart/form-data">
+      <div class="field-group">
+        <label for="quick-title">标题</label>
+        <input id="quick-title" name="title" class="field" placeholder="例如：评分9.0！..." required>
+      </div>
+      <div class="field-group">
+        <label for="quick-content">内容</label>
+        <textarea id="quick-content" name="content" class="textarea" placeholder="粘贴文字或链接"></textarea>
+      </div>
+      <div class="grid-2">
+        <div class="field-group">
+          <label for="quick-type">类型</label>
+          <select id="quick-type" name="content_type" class="select">
+            {% for type in content_types %}
+            <option value="{{ type }}">{{ type }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="quick-status">状态</label>
+          <select id="quick-status" name="status" class="select">
+            {% for status in statuses %}
+            <option value="{{ status }}">{{ status }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="field-group">
+          <label for="quick-category">分类</label>
+          <input id="quick-category" name="category" class="field" list="category-list" placeholder="产品 / 内容 / 设计">
+        </div>
+        <div class="field-group">
+          <label for="quick-source">来源平台</label>
+          <input id="quick-source" name="source" class="field" placeholder="GitHub / B站 / 小红书">
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="field-group">
+          <label for="quick-tags">标签</label>
+          <input id="quick-tags" name="tags" class="field" placeholder="AI, 自动化, 创意">
+        </div>
+        <div class="field-group">
+          <label for="quick-file">附件（可改）</label>
+          <input id="quick-file" name="file" class="field" type="file" accept="image/*,video/*">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="fetchTitleBtn" class="btn" type="button">抓链接标题</button>
+        <button class="btn btn-primary" type="submit">保存</button>
+      </div>
+      <div class="actions">
+        <span id="pastedFileBadge" class="paste-badge" style="display:none;"></span>
+      </div>
+      <img id="pastedPreview" class="pasted-preview" alt="粘贴图片预览">
+      <p id="quickHint" class="hint">自动识别可补全标题、来源、分类和标签。</p>
+    </form>
+  </div>
 </div>
-{% else %}
-<div class="empty">
-    <div class="empty-icon">✨</div>
-    <h3>开始收集你的灵感</h3>
-    <p>记录每一个闪现的想法，让创意不再流失</p>
-    <a href="/add" class="btn btn-primary">添加第一个灵感</a>
+
+<div id="imageLightbox" class="image-lightbox" aria-hidden="true">
+  <img id="lightboxImage" alt="图片放大预览">
 </div>
-{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const quickOverlay = document.getElementById("quickOverlay");
+const quickForm = document.getElementById("quickForm");
+const openQuickBtn = document.getElementById("openQuickBtn");
+const closeQuickBtn = document.getElementById("closeQuickBtn");
+const quickContent = document.getElementById("quick-content");
+const quickTitle = document.getElementById("quick-title");
+const quickType = document.getElementById("quick-type");
+const quickCategory = document.getElementById("quick-category");
+const quickSource = document.getElementById("quick-source");
+const quickTags = document.getElementById("quick-tags");
+const quickFile = document.getElementById("quick-file");
+const quickHint = document.getElementById("quickHint");
+const pastedFileBadge = document.getElementById("pastedFileBadge");
+const pastedPreview = document.getElementById("pastedPreview");
+const imageLightbox = document.getElementById("imageLightbox");
+const lightboxImage = document.getElementById("lightboxImage");
+
+let pastedClipboardFile = null;
+let pastedPreviewUrl = "";
+
+function openImageLightbox(src, altText = "图片预览") {
+  lightboxImage.src = src;
+  lightboxImage.alt = altText;
+  imageLightbox.classList.add("active");
+  imageLightbox.setAttribute("aria-hidden", "false");
+}
+
+function closeImageLightbox() {
+  imageLightbox.classList.remove("active");
+  imageLightbox.setAttribute("aria-hidden", "true");
+  lightboxImage.removeAttribute("src");
+}
+
+function setHint(message, isError = false) {
+  quickHint.textContent = message;
+  quickHint.className = isError ? "error" : "hint";
+}
+
+function openQuickModal() {
+  quickOverlay.classList.add("active");
+  quickOverlay.setAttribute("aria-hidden", "false");
+}
+
+function closeQuickModal() {
+  quickOverlay.classList.remove("active");
+  quickOverlay.setAttribute("aria-hidden", "true");
+  pastedClipboardFile = null;
+  setPastedFileBadge(null);
+  setPastedPreview(null);
+}
+
+function firstUrl(text) {
+  const match = (text || "").match(/https?:\/\/[^\s<>'"\)]+/i);
+  return match ? match[0].replace(/[.,!?)]}$/g, "") : "";
+}
+
+function isEditableTarget(target) {
+  if (!target || !(target instanceof Element)) return false;
+  return Boolean(target.closest("input, textarea, [contenteditable='true']"));
+}
+
+function setPastedFileBadge(file) {
+  if (!file) {
+    pastedFileBadge.style.display = "none";
+    pastedFileBadge.textContent = "";
+    return;
+  }
+  pastedFileBadge.style.display = "inline-flex";
+  pastedFileBadge.textContent = `已粘贴附件：${file.name}`;
+}
+
+function setPastedPreview(file) {
+  if (pastedPreviewUrl) {
+    URL.revokeObjectURL(pastedPreviewUrl);
+    pastedPreviewUrl = "";
+  }
+  if (!file) {
+    pastedPreview.style.display = "none";
+    pastedPreview.removeAttribute("src");
+    return;
+  }
+  pastedPreviewUrl = URL.createObjectURL(file);
+  pastedPreview.src = pastedPreviewUrl;
+  pastedPreview.style.display = "block";
+}
+
+function applySuggestedValue(element, value, overwrite = false) {
+  if (!value) return;
+  const current = (element.value || "").trim();
+  if (overwrite || !current) element.value = value;
+}
+
+async function analyzeContent(overwrite = false) {
+  const content = quickContent.value.trim();
+  if (!content) return;
+  try {
+    const response = await fetch("/api/analyze-paste", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({content})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      setHint(data.error || "自动识别失败", true);
+      return;
+    }
+
+    applySuggestedValue(quickTitle, data.title, overwrite);
+    applySuggestedValue(quickType, data.content_type, true);
+    applySuggestedValue(quickSource, data.source, overwrite || data.content_type === "链接");
+    applySuggestedValue(quickCategory, data.category, overwrite || data.content_type === "链接");
+    if (data.tags) applySuggestedValue(quickTags, data.tags, overwrite || data.content_type === "链接");
+    setHint("识别完成，可直接保存。");
+  } catch (_error) {
+    setHint("自动识别失败。", true);
+  }
+}
+
+document.addEventListener("paste", async (event) => {
+  if (isEditableTarget(event.target)) return;
+  const clipboard = event.clipboardData;
+  if (!clipboard) return;
+
+  let pastedText = clipboard.getData("text/plain") || "";
+  let pastedImage = null;
+
+  for (const item of clipboard.items) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const blob = item.getAsFile();
+      if (blob) {
+        pastedImage = new File([blob], `pasted-${Date.now()}.png`, {type: blob.type || "image/png"});
+        break;
+      }
+    }
+  }
+
+  if (!pastedText.trim() && !pastedImage) return;
+
+  event.preventDefault();
+  openQuickModal();
+
+  if (pastedText.trim()) {
+    quickContent.value = pastedText.trim();
+  } else if (pastedImage) {
+    quickContent.value = "【粘贴图片】";
+  }
+
+  pastedClipboardFile = pastedImage;
+  setPastedFileBadge(pastedClipboardFile);
+  setPastedPreview(pastedClipboardFile);
+
+  if (pastedImage) {
+    quickType.value = "图片";
+    setHint("已捕获图片并作为内容展示，可补充标题后保存。");
+  }
+
+  if (quickContent.value.trim()) {
+    await analyzeContent(false);
+  }
+});
+
+if (openQuickBtn) {
+  openQuickBtn.addEventListener("click", openQuickModal);
+}
+closeQuickBtn.addEventListener("click", closeQuickModal);
+quickOverlay.addEventListener("click", (event) => {
+  if (event.target === quickOverlay) closeQuickModal();
+});
+
+document.getElementById("fetchTitleBtn").addEventListener("click", async () => {
+  const url = firstUrl(quickContent.value);
+  if (!url) {
+    setHint("请先输入链接。", true);
+    return;
+  }
+  try {
+    const response = await fetch(`/api/fetch-title?url=${encodeURIComponent(url)}`);
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      setHint(data.error || "抓取失败", true);
+      return;
+    }
+    quickTitle.value = data.title || quickTitle.value;
+    setHint("标题已抓取。");
+  } catch (_error) {
+    setHint("抓取失败。", true);
+  }
+});
+
+quickContent.addEventListener("paste", () => setTimeout(() => analyzeContent(false), 80));
+quickContent.addEventListener("blur", () => analyzeContent(false));
+quickFile.addEventListener("change", () => {
+  const file = quickFile.files && quickFile.files[0] ? quickFile.files[0] : null;
+  if (file) {
+    pastedClipboardFile = null;
+    setPastedFileBadge(file);
+    if (file.type.startsWith("image/")) {
+      setPastedPreview(file);
+    } else {
+      setPastedPreview(null);
+    }
+  } else {
+    setPastedFileBadge(null);
+    setPastedPreview(null);
+  }
+});
+
+quickForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formData = new FormData(quickForm);
+  if (!quickFile.files.length && pastedClipboardFile) {
+    formData.set("file", pastedClipboardFile, pastedClipboardFile.name);
+  }
+
+  const response = await fetch("/api/add", {method: "POST", body: formData});
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    setHint(data.error || "保存失败", true);
+    return;
+  }
+  window.location.reload();
+});
+
+Array.from(document.querySelectorAll(".single-delete")).forEach((button) => {
+  button.addEventListener("click", async () => {
+    if (!confirm("确认删除这条记录吗？")) return;
+    const id = button.dataset.id;
+    const response = await fetch(`/delete/${id}`, {method: "POST"});
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      alert(data.error || "删除失败");
+      return;
+    }
+    window.location.reload();
+  });
+});
+
+Array.from(document.querySelectorAll(".status-select")).forEach((select) => {
+  select.addEventListener("change", async () => {
+    const id = select.dataset.statusId;
+    const status = select.value;
+    const response = await fetch(`/api/status/${id}`, {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({status})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) alert(data.error || "状态更新失败");
+  });
+});
+
+function selectedIds() {
+  return Array.from(document.querySelectorAll(".selection:checked")).map((el) => Number(el.value));
+}
+
+document.getElementById("selectAllBtn").addEventListener("click", () => {
+  const boxes = Array.from(document.querySelectorAll(".selection"));
+  const allChecked = boxes.length > 0 && boxes.every((box) => box.checked);
+  boxes.forEach((box) => { box.checked = !allChecked; });
+});
+
+document.getElementById("deleteBtn").addEventListener("click", async () => {
+  const ids = selectedIds();
+  if (!ids.length) return alert("请先选择要删除的记录");
+  if (!confirm(`确认删除 ${ids.length} 条记录吗？`)) return;
+  const response = await fetch("/api/batch-delete", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ids})
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) return alert(data.error || "删除失败");
+  window.location.reload();
+});
+
+document.getElementById("mergeBtn").addEventListener("click", async () => {
+  const ids = selectedIds();
+  if (ids.length < 2) return alert("至少选择两条记录");
+  const response = await fetch("/api/merge", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ids})
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) return alert(data.error || "合并失败");
+  window.location.reload();
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLImageElement && target.classList.contains("zoomable")) {
+    openImageLightbox(target.src, target.alt || "图片");
+  }
+});
+
+imageLightbox.addEventListener("click", (event) => {
+  if (event.target === imageLightbox) closeImageLightbox();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && imageLightbox.classList.contains("active")) {
+    closeImageLightbox();
+  }
+});
+</script>
 {% endblock %}
