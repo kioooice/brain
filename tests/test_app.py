@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from brain_app import create_app
 from brain_app.extensions import db
-from brain_app.models import Inspiration
+from brain_app.models import Box, Inspiration
 from brain_app.services import extract_title_from_url
 from brain_app.constants import STATUS_DONE, STATUS_INBOX, STATUS_TODO, TYPE_IMAGE, TYPE_LINK, TYPE_TEXT
 
@@ -101,6 +101,24 @@ class TestAppCase(unittest.TestCase):
         with self.app.app_context():
             item = db.session.get(Inspiration, self.first_id)
             self.assertEqual(item.status, STATUS_DONE)
+
+    def test_item_can_be_placed_into_box_and_serializes_box_state(self):
+        with self.app.app_context():
+            box = Box(name="产品灵感", color="#f97316")
+            db.session.add(box)
+            db.session.commit()
+
+            item = db.session.get(Inspiration, self.first_id)
+            item.place_into_box(box)
+            db.session.commit()
+
+            item_dict = item.to_dict()
+            self.assertEqual(item.box_id, box.id)
+            self.assertFalse(item.is_inbox)
+            self.assertEqual(item.box.name, "产品灵感")
+            self.assertEqual(item_dict["box_id"], box.id)
+            self.assertEqual(item_dict["box_name"], "产品灵感")
+            self.assertFalse(item_dict["is_inbox"])
 
     def test_batch_delete_removes_records(self):
         response = self.client.post(
