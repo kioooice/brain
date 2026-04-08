@@ -24,6 +24,8 @@ describe("AppShell", () => {
               title: "Hero ref",
               content: "",
               sourceUrl: "",
+              sourcePath: "",
+              bundleCount: 0,
               createdAt: "2026-04-08T00:00:00.000Z",
               updatedAt: "2026-04-08T00:00:00.000Z",
             },

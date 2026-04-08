@@ -30,7 +30,13 @@ export function MainCanvas({ box, items }: MainCanvasProps) {
                 <span className="card-id">#{item.id}</span>
               </div>
               <h2>{item.title}</h2>
-              <p>{item.content || "No body text"}</p>
+              {item.kind === "bundle" ? (
+                <p>
+                  {item.bundleCount} item{item.bundleCount === 1 ? "" : "s"}
+                </p>
+              ) : (
+                <p>{item.content || "No body text"}</p>
+              )}
             </article>
           ))
         )}

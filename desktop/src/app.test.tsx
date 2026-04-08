@@ -14,6 +14,20 @@ const initialSnapshot: WorkbenchSnapshot = {
   panelState: { selectedBoxId: 1, quickPanelOpen: true },
 };
 
+function createDropEvent(type: string, paths: string[]) {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as Event & {
+    dataTransfer?: {
+      files: Array<{ path: string }>;
+    };
+  };
+  Object.defineProperty(event, "dataTransfer", {
+    value: {
+      files: paths.map((path) => ({ path })),
+    },
+  });
+  return event;
+}
+
 vi.mock("electron", () => ({
   contextBridge: {
     exposeInMainWorld: electronMocks.exposeInMainWorld,
@@ -69,6 +83,7 @@ describe("App", () => {
     window.brainDesktop = {
       bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
       captureTextOrLink,
+      captureDroppedPaths: vi.fn(),
       enrichLinkTitle: vi.fn(),
     };
 
@@ -118,6 +133,7 @@ describe("App", () => {
     window.brainDesktop = {
       bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
       captureTextOrLink,
+      captureDroppedPaths: vi.fn(),
       enrichLinkTitle,
     };
 
@@ -131,6 +147,80 @@ describe("App", () => {
     await waitFor(() => expect(captureTextOrLink).toHaveBeenCalledWith("https://example.com"));
     await waitFor(() => expect(enrichLinkTitle).toHaveBeenCalledWith(3, "https://example.com"));
     expect((await screen.findAllByText("Example Domain")).length).toBeGreaterThan(0);
+  });
+
+  it("captures a dropped file and updates the canvas", async () => {
+    const captureDroppedPaths = vi.fn().mockResolvedValue({
+      ...initialSnapshot,
+      items: [
+        {
+          id: 10,
+          boxId: 1,
+          kind: "file",
+          title: "hero.png",
+          content: "C:\\assets\\hero.png",
+          sourceUrl: "",
+          sourcePath: "C:\\assets\\hero.png",
+          bundleCount: 0,
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:00.000Z",
+        },
+      ],
+    });
+
+    window.brainDesktop = {
+      bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
+      captureTextOrLink: vi.fn(),
+      captureDroppedPaths,
+      enrichLinkTitle: vi.fn(),
+    };
+
+    render(<App />);
+
+    fireEvent(await screen.findByLabelText("Workspace Drop Zone"), createDropEvent("drop", ["C:\\assets\\hero.png"]));
+
+    await waitFor(() => expect(captureDroppedPaths).toHaveBeenCalledWith(["C:\\assets\\hero.png"]));
+    expect((await screen.findAllByText("hero.png")).length).toBeGreaterThan(0);
+  });
+
+  it("renders a dropped bundle summary", async () => {
+    const captureDroppedPaths = vi.fn().mockResolvedValue({
+      ...initialSnapshot,
+      items: [
+        {
+          id: 11,
+          boxId: 1,
+          kind: "bundle",
+          title: "Dropped bundle",
+          content: "2 items",
+          sourceUrl: "",
+          sourcePath: "",
+          bundleCount: 2,
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:00.000Z",
+        },
+      ],
+    });
+
+    window.brainDesktop = {
+      bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
+      captureTextOrLink: vi.fn(),
+      captureDroppedPaths,
+      enrichLinkTitle: vi.fn(),
+    };
+
+    render(<App />);
+
+    fireEvent(
+      await screen.findByLabelText("Workspace Drop Zone"),
+      createDropEvent("drop", ["C:\\assets\\hero.png", "C:\\assets\\refs"])
+    );
+
+    await waitFor(() =>
+      expect(captureDroppedPaths).toHaveBeenCalledWith(["C:\\assets\\hero.png", "C:\\assets\\refs"])
+    );
+    expect((await screen.findAllByText("Dropped bundle")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("2 items")).length).toBeGreaterThan(0);
   });
 });
 

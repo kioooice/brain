@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceDropZone } from "./workspace-drop-zone";
 
 function createDropEvent(type: string, paths: string[]) {
-  const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent<HTMLDivElement>;
+  const event = new Event(type, { bubbles: true, cancelable: true }) as Event & {
+    dataTransfer?: {
+      files: Array<{ path: string }>;
+    };
+  };
   Object.defineProperty(event, "dataTransfer", {
     value: {
       files: paths.map((path) => ({ path })),
