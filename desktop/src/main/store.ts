@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { Box, Item, PanelState, WorkbenchSnapshot } from "../shared/types";
+import type { Box, Item, WorkbenchSnapshot } from "../shared/types";
 
 export type DesktopStore = {
   getWorkbenchSnapshot: () => WorkbenchSnapshot;
