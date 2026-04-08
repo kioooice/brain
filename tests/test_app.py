@@ -136,6 +136,27 @@ class TestAppCase(unittest.TestCase):
         payload = response.get_json()
         self.assertFalse(payload["success"])
 
+    def test_selected_box_view_shows_management_entry_point(self):
+        with self.app.app_context():
+            box = Box(name="设计参考", color="#2563eb", description="收纳界面方向", sort_order=1)
+            db.session.add(box)
+            db.session.commit()
+            box_id = box.id
+
+        response = self.client.get(f"/?box_id={box_id}&show_sorted=1")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("管理这个盒子", html)
+        self.assertIn("盒子设置", html)
+        self.assertIn('id="boxManageOverlay"', html)
+        self.assertIn('id="boxManageForm"', html)
+        self.assertIn('id="openManageBoxBtn"', html)
+        self.assertIn('id="moveBoxUpBtn"', html)
+        self.assertIn('id="moveBoxDownBtn"', html)
+        self.assertIn('id="deleteBoxBtn"', html)
+        self.assertIn("删除这个盒子后，盒子里的全部卡片也会一起删除。", html)
+
     def test_update_box_api_updates_selected_box_fields(self):
         with self.app.app_context():
             box = Box(name="产品灵感", color="#f97316", description="旧描述", sort_order=1)
