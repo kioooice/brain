@@ -1,11 +1,17 @@
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
 
 const electronMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
+
+const initialSnapshot = {
+  boxes: [{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }],
+  items: [],
+  panelState: { selectedBoxId: 1, quickPanelOpen: true },
+};
 
 vi.mock("electron", () => ({
   contextBridge: {
@@ -18,12 +24,14 @@ vi.mock("electron", () => ({
 
 beforeEach(() => {
   window.brainDesktop = {
-    bootstrap: vi.fn().mockResolvedValue({
-      boxes: [{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }],
-      items: [],
-      panelState: { selectedBoxId: 1, quickPanelOpen: true },
-    }),
+    bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
+    captureTextOrLink: vi.fn(),
+    enrichLinkTitle: vi.fn(),
   };
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe("App", () => {
@@ -37,6 +45,90 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findAllByText("Inbox")).toHaveLength(2);
+  });
+
+  it("captures a text note and updates the canvas", async () => {
+    const captureTextOrLink = vi.fn().mockResolvedValue({
+      ...initialSnapshot,
+      items: [
+        {
+          id: 2,
+          boxId: 1,
+          kind: "text",
+          title: "Quick note",
+          content: "Quick note",
+          sourceUrl: "",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:00.000Z",
+        },
+      ],
+    });
+
+    window.brainDesktop = {
+      bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
+      captureTextOrLink,
+      enrichLinkTitle: vi.fn(),
+    };
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByPlaceholderText("Paste a link or note"), {
+      target: { value: "Quick note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(captureTextOrLink).toHaveBeenCalledWith("Quick note"));
+    expect((await screen.findAllByText("Quick note")).length).toBeGreaterThan(0);
+  });
+
+  it("refreshes a link title after enrichment", async () => {
+    const captureTextOrLink = vi.fn().mockResolvedValue({
+      ...initialSnapshot,
+      items: [
+        {
+          id: 3,
+          boxId: 1,
+          kind: "link",
+          title: "https://example.com",
+          content: "https://example.com",
+          sourceUrl: "https://example.com",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:00.000Z",
+        },
+      ],
+    });
+    const enrichLinkTitle = vi.fn().mockResolvedValue({
+      ...initialSnapshot,
+      items: [
+        {
+          id: 3,
+          boxId: 1,
+          kind: "link",
+          title: "Example Domain",
+          content: "https://example.com",
+          sourceUrl: "https://example.com",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:01.000Z",
+        },
+      ],
+    });
+
+    window.brainDesktop = {
+      bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
+      captureTextOrLink,
+      enrichLinkTitle,
+    };
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByPlaceholderText("Paste a link or note"), {
+      target: { value: "https://example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(captureTextOrLink).toHaveBeenCalledWith("https://example.com"));
+    await waitFor(() => expect(enrichLinkTitle).toHaveBeenCalledWith(3, "https://example.com"));
+    expect((await screen.findAllByText("Example Domain")).length).toBeGreaterThan(0);
   });
 });
 

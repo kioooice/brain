@@ -19,9 +19,27 @@ export function App() {
     };
   }, []);
 
+  async function handleQuickCapture(input: string) {
+    const nextSnapshot = await window.brainDesktop.captureTextOrLink(input);
+    setSnapshot(nextSnapshot);
+
+    const createdItem = nextSnapshot.items[0];
+    if (createdItem?.kind !== "link" || !createdItem.sourceUrl) {
+      return;
+    }
+
+    const enrichedSnapshot = await window.brainDesktop.enrichLinkTitle(
+      createdItem.id,
+      createdItem.sourceUrl
+    );
+    if (enrichedSnapshot) {
+      setSnapshot(enrichedSnapshot);
+    }
+  }
+
   if (!snapshot) {
     return <div className="app-loading">Loading Brain Desktop...</div>;
   }
 
-  return <AppShell snapshot={snapshot} />;
+  return <AppShell snapshot={snapshot} onQuickCapture={handleQuickCapture} />;
 }
