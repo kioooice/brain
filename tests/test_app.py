@@ -16,6 +16,7 @@ from brain_app.services import (
     get_inbox_items,
     place_item_into_box,
     suggest_boxes_for_item,
+    delete_box,
     move_box,
     update_box,
 )
@@ -194,6 +195,49 @@ class TestAppCase(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "已经在最下面"):
                 move_box(second.id, "down")
+
+    def test_delete_box_removes_box_and_assigned_items(self):
+        with self.app.app_context():
+            box = Box(name="设计参考", color="#2563eb", sort_order=1)
+            db.session.add(box)
+            db.session.commit()
+
+            first = db.session.get(Inspiration, self.first_id)
+            second = db.session.get(Inspiration, self.second_id)
+            first.place_into_box(box)
+            second.place_into_box(box)
+            db.session.commit()
+
+            deleted_count = delete_box(box.id)
+
+            self.assertEqual(deleted_count, 2)
+            self.assertIsNone(db.session.get(Box, box.id))
+            self.assertIsNone(db.session.get(Inspiration, self.first_id))
+            self.assertIsNone(db.session.get(Inspiration, self.second_id))
+
+    def test_delete_box_removes_uploaded_files_for_deleted_items(self):
+        with self.app.app_context():
+            box = Box(name="图片参考", color="#22c55e", sort_order=1)
+            db.session.add(box)
+            db.session.commit()
+
+            upload_path = self.upload_dir / "cover.png"
+            upload_path.parent.mkdir(parents=True, exist_ok=True)
+            upload_path.write_bytes(b"fake image bytes")
+
+            item = db.session.get(Inspiration, self.first_id)
+            item.file_path = "cover.png"
+            item.place_into_box(box)
+            db.session.commit()
+
+            delete_box(box.id)
+
+            self.assertFalse(upload_path.exists())
+
+    def test_delete_box_rejects_missing_box(self):
+        with self.app.app_context():
+            with self.assertRaisesRegex(ValueError, "盒子不存在"):
+                delete_box(999999)
 
     def test_open_box_shows_box_contents_on_index(self):
         with self.app.app_context():

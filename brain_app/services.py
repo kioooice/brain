@@ -208,6 +208,22 @@ def move_box(box_id: int, direction: str) -> list[Box]:
     return get_boxes()
 
 
+def delete_box(box_id: int) -> int:
+    box = db.session.get(Box, box_id)
+    if not box:
+        raise ValueError("盒子不存在")
+
+    items = Inspiration.query.filter(Inspiration.box_id == box.id).all()
+    deleted_count = len(items)
+    for item in items:
+        delete_uploaded_file(item.file_path)
+        db.session.delete(item)
+
+    db.session.delete(box)
+    db.session.commit()
+    return deleted_count
+
+
 def get_inbox_items(show_sorted: bool = False) -> list[Inspiration]:
     query = Inspiration.query.order_by(Inspiration.created_at.desc())
     if not show_sorted:
