@@ -22,6 +22,6 @@ describe("App", () => {
   it("loads the first box name from preload bootstrap", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Inbox")).toBeInTheDocument();
+    expect(await screen.findAllByText("Inbox")).toHaveLength(2);
   });
 });

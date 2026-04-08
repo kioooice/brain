@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AppShell } from "./components/app-shell";
 import type { WorkbenchSnapshot } from "./shared/types";
 
 export function App() {
@@ -22,5 +23,5 @@ export function App() {
     return <div className="app-loading">Loading Brain Desktop...</div>;
   }
 
-  return <div className="app-loaded">{snapshot.boxes[0]?.name ?? "No boxes"}</div>;
+  return <AppShell snapshot={snapshot} />;
 }
