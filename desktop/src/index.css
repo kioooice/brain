@@ -1,0 +1,27 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", sans-serif;
+  color: #231815;
+  background: linear-gradient(180deg, #f7f1e8 0%, #efe6d8 100%);
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100vh;
+}
+
+body {
+  display: grid;
+  place-items: center;
+}
+
+.app-loading {
+  padding: 24px 28px;
+  border-radius: 18px;
+  background: rgba(255, 248, 240, 0.92);
+  box-shadow: 0 16px 40px rgba(60, 32, 12, 0.12);
+  font-size: 18px;
+  font-weight: 600;
+}

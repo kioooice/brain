@@ -8,5 +8,11 @@ uploads/
 
 build/
 dist/
+desktop/node_modules/
+desktop/.vite/
+desktop/.webpack/
+desktop/dist/
+desktop/out/
+desktop/data/
 
 launcher.log
