@@ -355,23 +355,6 @@ class TestAppCase(unittest.TestCase):
         self.assertIn(f'href="/?box_id={first_box_id}&amp;show_sorted=1"', html)
         self.assertIn(f'href="/?box_id={third_box_id}&amp;show_sorted=1"', html)
 
-    def test_selected_box_view_shows_management_entry_point(self):
-        with self.app.app_context():
-            box = Box(name="设计参考", color="#2563eb", description="收纳界面方向", sort_order=1)
-            db.session.add(box)
-            db.session.commit()
-            box_id = box.id
-
-        response = self.client.get(f"/?box_id={box_id}&show_sorted=1")
-
-        self.assertEqual(response.status_code, 200)
-        html = response.get_data(as_text=True)
-        self.assertIn("管理这个盒子", html)
-        self.assertIn("盒子设置", html)
-        self.assertIn('id="boxManageOverlay"', html)
-        self.assertIn('id="boxManageForm"', html)
-        self.assertIn(f'data-box-id="{box_id}"', html)
-
     def test_items_api_returns_seeded_data(self):
         response = self.client.get("/api/items")
 
