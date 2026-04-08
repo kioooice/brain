@@ -1,6 +1,7 @@
 import type { WorkbenchSnapshot } from "../shared/types";
 import { BoxRail } from "./box-rail";
 import { MainCanvas } from "./main-canvas";
+import { QuickCapture } from "./quick-capture";
 import { QuickPanel } from "./quick-panel";
 
 type AppShellProps = {
@@ -15,7 +16,10 @@ export function AppShell({ snapshot }: AppShellProps) {
   return (
     <div className="app-shell">
       <BoxRail boxes={snapshot.boxes} selectedBoxId={selectedBoxId} />
-      <MainCanvas box={currentBox} items={currentItems} />
+      <div className="workspace-column">
+        <QuickCapture />
+        <MainCanvas box={currentBox} items={currentItems} />
+      </div>
       <QuickPanel items={snapshot.items} open={snapshot.panelState.quickPanelOpen} />
     </div>
   );

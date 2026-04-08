@@ -23,6 +23,11 @@ describe("AppShell", () => {
     expect(screen.getByText("Current Box")).toBeInTheDocument();
     expect(screen.getByText("1 item")).toBeInTheDocument();
     expect(screen.getAllByText("Hero ref")).toHaveLength(2);
+    expect(screen.getByText("Quick Capture")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Paste a link, note, or file hint")).toBeInTheDocument();
+    expect(
+      screen.getByText("Drop screenshots, images, or files anywhere into the window")
+    ).toBeInTheDocument();
     expect(screen.getByText("Quick Panel")).toBeInTheDocument();
   });
 });
