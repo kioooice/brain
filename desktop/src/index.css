@@ -45,6 +45,25 @@ body {
   align-content: start;
 }
 
+.workspace-drop-zone {
+  border-radius: 32px;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.workspace-drop-zone.active {
+  background: rgba(255, 244, 230, 0.78);
+  box-shadow: 0 0 0 2px rgba(176, 132, 88, 0.32);
+}
+
+.workspace-drop-error {
+  margin: 0 0 12px;
+  color: #b43f24;
+  font-size: 0.88rem;
+}
+
 .box-rail,
 .main-canvas,
 .quick-panel {
