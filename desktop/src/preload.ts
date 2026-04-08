@@ -1,2 +1,9 @@
-// See the Electron documentation for details on how to use preload scripts:
-// https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
+import { contextBridge, ipcRenderer } from "electron";
+import { IPC_CHANNELS } from "./shared/ipc";
+import type { WorkbenchSnapshot } from "./shared/types";
+
+contextBridge.exposeInMainWorld("brainDesktop", {
+  bootstrap(): Promise<WorkbenchSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.bootstrap);
+  },
+});
