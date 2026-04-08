@@ -11,6 +11,7 @@ from .services import (
     analyze_pasted_content,
     apply_form_to_item,
     apply_json_to_item,
+    delete_box,
     delete_uploaded_file,
     extract_first_url,
     extract_title_from_url,
@@ -21,10 +22,12 @@ from .services import (
     get_stats,
     infer_content_type_from_upload,
     merge_records,
+    move_box,
     place_item_into_box,
     normalize_status,
     save_uploaded_file,
     suggest_boxes_for_item,
+    update_box,
     validate_outbound_url,
 )
 
@@ -37,6 +40,10 @@ def serialize_item(item: Inspiration) -> dict:
     for child in item_dict.get("children", []):
         child["open_url"] = extract_first_url(child.get("content", ""))
     return item_dict
+
+
+def _box_error_status(message: str) -> int:
+    return 404 if message == "盒子不存在" else 400
 
 
 @bp.route("/")
@@ -239,6 +246,43 @@ def api_create_box():
     db.session.add(box)
     db.session.commit()
     return jsonify({"success": True, "box": box.to_dict()}), 201
+
+
+@bp.route("/api/boxes/<int:box_id>", methods=["PUT"])
+def api_update_box(box_id: int):
+    data = request.get_json(silent=True) or {}
+    try:
+        box = update_box(
+            box_id,
+            name=data.get("name", ""),
+            color=data.get("color", ""),
+            description=data.get("description", ""),
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), _box_error_status(str(exc))
+
+    return jsonify({"success": True, "box": box.to_dict()})
+
+
+@bp.route("/api/boxes/<int:box_id>/move", methods=["POST"])
+def api_move_box(box_id: int):
+    data = request.get_json(silent=True) or {}
+    try:
+        boxes = move_box(box_id, data.get("direction", ""))
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), _box_error_status(str(exc))
+
+    return jsonify({"success": True, "boxes": [box.to_dict() for box in boxes]})
+
+
+@bp.route("/api/boxes/<int:box_id>", methods=["DELETE"])
+def api_delete_box(box_id: int):
+    try:
+        deleted_count = delete_box(box_id)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), _box_error_status(str(exc))
+
+    return jsonify({"success": True, "deleted": deleted_count})
 
 
 @bp.route("/api/edit/<int:item_id>", methods=["PUT"])

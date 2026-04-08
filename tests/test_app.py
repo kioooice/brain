@@ -136,6 +136,80 @@ class TestAppCase(unittest.TestCase):
         payload = response.get_json()
         self.assertFalse(payload["success"])
 
+    def test_update_box_api_updates_selected_box_fields(self):
+        with self.app.app_context():
+            box = Box(name="产品灵感", color="#f97316", description="旧描述", sort_order=1)
+            db.session.add(box)
+            db.session.commit()
+            box_id = box.id
+
+        response = self.client.put(
+            f"/api/boxes/{box_id}",
+            json={"name": "设计参考", "color": "#2563eb", "description": "新的说明"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["box"]["name"], "设计参考")
+        self.assertEqual(payload["box"]["color"], "#2563eb")
+
+    def test_move_box_api_reorders_boxes(self):
+        with self.app.app_context():
+            first = Box(name="收集", color="#f97316", sort_order=1)
+            second = Box(name="设计参考", color="#2563eb", sort_order=2)
+            db.session.add_all([first, second])
+            db.session.commit()
+            second_id = second.id
+
+        response = self.client.post(f"/api/boxes/{second_id}/move", json={"direction": "up"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual([box["name"] for box in payload["boxes"]], ["设计参考", "收集"])
+
+    def test_delete_box_api_removes_box_and_items(self):
+        with self.app.app_context():
+            box = Box(name="设计参考", color="#2563eb", sort_order=1)
+            db.session.add(box)
+            db.session.commit()
+            box_id = box.id
+
+            item = db.session.get(Inspiration, self.first_id)
+            item.place_into_box(box)
+            db.session.commit()
+
+        response = self.client.delete(f"/api/boxes/{box_id}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["deleted"], 1)
+
+        with self.app.app_context():
+            self.assertIsNone(db.session.get(Box, box_id))
+            self.assertIsNone(db.session.get(Inspiration, self.first_id))
+
+    def test_box_management_apis_return_readable_errors(self):
+        missing_update = self.client.put(
+            "/api/boxes/999999",
+            json={"name": "不存在", "color": "#000000", "description": ""},
+        )
+        self.assertEqual(missing_update.status_code, 404)
+
+        with self.app.app_context():
+            box = Box(name="收集", color="#f97316", sort_order=1)
+            db.session.add(box)
+            db.session.commit()
+            box_id = box.id
+
+        bad_move = self.client.post(f"/api/boxes/{box_id}/move", json={"direction": "left"})
+        self.assertEqual(bad_move.status_code, 400)
+
+        missing_delete = self.client.delete("/api/boxes/999999")
+        self.assertEqual(missing_delete.status_code, 404)
+
     def test_update_box_updates_name_color_and_description(self):
         with self.app.app_context():
             box = Box(name="产品灵感", color="#f97316", description="旧描述", sort_order=1)
