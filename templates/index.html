@@ -335,6 +335,17 @@
     gap: 12px;
   }
 
+  .box-manage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .box-manage-danger {
+    display: grid;
+    gap: 10px;
+  }
+
   .quick-modal {
     width: min(860px, 100%);
     max-height: 90vh;
@@ -478,6 +489,7 @@
       <div class="capture-actions">
         <button id="openQuickBtnInline" class="btn btn-primary" type="button">快速放入内容</button>
         {% if selected_box %}
+        <button id="openManageBoxBtn" class="btn" type="button" data-box-id="{{ selected_box.id }}">管理这个盒子</button>
         {% if selected_box_prev %}
         <a class="btn" href="{{ url_for('main.index', box_id=selected_box_prev.id, show_sorted='1' if show_sorted else None) }}">上一个盒子</a>
         {% endif %}
@@ -593,6 +605,46 @@
   <img id="lightboxImage" alt="图片放大预览">
 </div>
 
+{% if selected_box %}
+<div id="boxManageOverlay" class="quick-overlay" aria-hidden="true">
+  <div class="mini-modal">
+    <div class="quick-header">
+      <div>
+        <h3>盒子设置</h3>
+        <p class="meta">改名、改色、调整顺序，或者删除这个盒子和里面的卡片。</p>
+      </div>
+      <button id="closeManageBoxBtn" class="btn" type="button">关闭</button>
+    </div>
+
+    <form id="boxManageForm" class="mini-form" data-box-id="{{ selected_box.id }}">
+      <div class="field-group">
+        <label for="manage-box-name">盒子名称</label>
+        <input id="manage-box-name" name="name" class="field" value="{{ selected_box.name }}" required>
+      </div>
+      <div class="grid-2">
+        <div class="field-group">
+          <label for="manage-box-color">盒子颜色</label>
+          <input id="manage-box-color" name="color" class="field" type="color" value="{{ selected_box.color }}">
+        </div>
+        <div class="field-group">
+          <label for="manage-box-description">一句说明</label>
+          <input id="manage-box-description" name="description" class="field" value="{{ selected_box.description }}">
+        </div>
+      </div>
+      <div class="box-manage-actions">
+        <button id="moveBoxUpBtn" class="btn" type="button">上移</button>
+        <button id="moveBoxDownBtn" class="btn" type="button">下移</button>
+        <button class="btn btn-primary" type="submit">保存修改</button>
+      </div>
+      <p id="boxManageHint" class="hint">删除会同时删除盒子里的全部卡片。</p>
+      <div class="box-manage-danger">
+        <button id="deleteBoxBtn" class="btn btn-danger" type="button">删除这个盒子</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <div id="boxOverlay" class="quick-overlay" aria-hidden="true">
   <div class="mini-modal">
     <div class="quick-header">
@@ -647,6 +699,14 @@ const pastedPreview = document.getElementById("pastedPreview");
 const imageLightbox = document.getElementById("imageLightbox");
 const lightboxImage = document.getElementById("lightboxImage");
 const showSortedToggle = document.getElementById("showSortedToggle");
+const boxManageOverlay = document.getElementById("boxManageOverlay");
+const openManageBoxBtn = document.getElementById("openManageBoxBtn");
+const closeManageBoxBtn = document.getElementById("closeManageBoxBtn");
+const boxManageForm = document.getElementById("boxManageForm");
+const boxManageHint = document.getElementById("boxManageHint");
+const moveBoxUpBtn = document.getElementById("moveBoxUpBtn");
+const moveBoxDownBtn = document.getElementById("moveBoxDownBtn");
+const deleteBoxBtn = document.getElementById("deleteBoxBtn");
 const boxOverlay = document.getElementById("boxOverlay");
 const openBoxModalBtn = document.getElementById("openBoxModalBtn");
 const closeBoxModalBtn = document.getElementById("closeBoxModalBtn");
@@ -697,6 +757,39 @@ function closeBoxModal() {
   boxOverlay.setAttribute("aria-hidden", "true");
   boxHint.textContent = "名字尽量短，拖放时更好认。";
   boxHint.className = "hint";
+}
+
+function openManageBoxModal() {
+  if (!boxManageOverlay) return;
+  boxManageOverlay.classList.add("active");
+  boxManageOverlay.setAttribute("aria-hidden", "false");
+}
+
+function closeManageBoxModal() {
+  if (!boxManageOverlay) return;
+  boxManageOverlay.classList.remove("active");
+  boxManageOverlay.setAttribute("aria-hidden", "true");
+  if (boxManageHint) {
+    boxManageHint.textContent = "删除会同时删除盒子里的全部卡片。";
+    boxManageHint.className = "hint";
+  }
+}
+
+async function moveSelectedBox(direction) {
+  if (!boxManageForm) return;
+  const boxId = boxManageForm.dataset.boxId;
+  const response = await fetch(`/api/boxes/${boxId}/move`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({direction}),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    boxManageHint.textContent = data.error || "移动失败";
+    boxManageHint.className = "error";
+    return;
+  }
+  window.location.reload();
 }
 
 function firstUrl(text) {
@@ -812,6 +905,7 @@ document.addEventListener("paste", async (event) => {
 if (openQuickBtn) openQuickBtn.addEventListener("click", openQuickModal);
 if (openQuickBtnInline) openQuickBtnInline.addEventListener("click", openQuickModal);
 if (openBoxModalBtn) openBoxModalBtn.addEventListener("click", openBoxModal);
+if (openManageBoxBtn) openManageBoxBtn.addEventListener("click", openManageBoxModal);
 closeQuickBtn.addEventListener("click", closeQuickModal);
 quickOverlay.addEventListener("click", (event) => {
   if (event.target === quickOverlay) closeQuickModal();
@@ -820,6 +914,59 @@ if (closeBoxModalBtn) closeBoxModalBtn.addEventListener("click", closeBoxModal);
 if (boxOverlay) {
   boxOverlay.addEventListener("click", (event) => {
     if (event.target === boxOverlay) closeBoxModal();
+  });
+}
+if (closeManageBoxBtn) closeManageBoxBtn.addEventListener("click", closeManageBoxModal);
+if (boxManageOverlay) {
+  boxManageOverlay.addEventListener("click", (event) => {
+    if (event.target === boxManageOverlay) closeManageBoxModal();
+  });
+}
+
+if (boxManageForm) {
+  boxManageForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const boxId = boxManageForm.dataset.boxId;
+    const payload = {
+      name: document.getElementById("manage-box-name").value,
+      color: document.getElementById("manage-box-color").value,
+      description: document.getElementById("manage-box-description").value,
+    };
+    const response = await fetch(`/api/boxes/${boxId}`, {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      boxManageHint.textContent = data.error || "保存失败";
+      boxManageHint.className = "error";
+      return;
+    }
+    window.location.reload();
+  });
+}
+
+if (moveBoxUpBtn) moveBoxUpBtn.addEventListener("click", () => moveSelectedBox("up"));
+if (moveBoxDownBtn) moveBoxDownBtn.addEventListener("click", () => moveSelectedBox("down"));
+if (deleteBoxBtn) {
+  deleteBoxBtn.addEventListener("click", async () => {
+    if (!boxManageForm) return;
+    const confirmed = window.confirm("删除这个盒子后，盒子里的全部卡片也会一起删除。确定继续吗？");
+    if (!confirmed) return;
+
+    const boxId = boxManageForm.dataset.boxId;
+    const response = await fetch(`/api/boxes/${boxId}`, {method: "DELETE"});
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      boxManageHint.textContent = data.error || "删除失败";
+      boxManageHint.className = "error";
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("box_id");
+    window.location.href = url.toString();
   });
 }
 
