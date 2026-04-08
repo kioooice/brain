@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 type BoxRow = {
   id: number;
@@ -14,6 +14,9 @@ type ItemRow = {
   kind: string;
   title: string;
   content: string;
+  source_url: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type PanelStateRow = {
@@ -22,6 +25,7 @@ type PanelStateRow = {
 };
 
 class FakeDatabase {
+  static omitPanelStateRow = false;
   private boxes: BoxRow[] = [];
   private items: ItemRow[] = [];
   private panelState: PanelStateRow | null = null;
@@ -68,6 +72,47 @@ class FakeDatabase {
       };
     }
 
+    if (sql.includes("insert into items")) {
+      return {
+        run: (
+          boxId: number,
+          kind: string,
+          title: string,
+          content: string,
+          sourceUrl: string,
+          createdAt: string,
+          updatedAt: string
+        ) => {
+          const id = ++this.lastInsertRowid;
+          this.items.push({
+            id,
+            box_id: boxId,
+            kind,
+            title,
+            content,
+            source_url: sourceUrl,
+            created_at: createdAt,
+            updated_at: updatedAt,
+          });
+          return { lastInsertRowid: id };
+        },
+      };
+    }
+
+    if (sql.includes("update items")) {
+      return {
+        run: (title: string, updatedAt: string, itemId: number) => {
+          const item = this.items.find((entry) => entry.id === itemId);
+          if (!item) {
+            return { changes: 0 };
+          }
+          item.title = title;
+          item.updated_at = updatedAt;
+          return { changes: 1 };
+        },
+      };
+    }
+
     if (sql.includes("select id, name, color, description, sort_order as sortOrder from boxes")) {
       return {
         all: () =>
@@ -84,7 +129,7 @@ class FakeDatabase {
       };
     }
 
-    if (sql.includes("select id, box_id as boxId, kind, title, content from items")) {
+    if (sql.includes("select id, box_id as boxId, kind, title, content, source_url as sourceUrl")) {
       return {
         all: () =>
           this.items
@@ -96,6 +141,9 @@ class FakeDatabase {
               kind: item.kind,
               title: item.title,
               content: item.content,
+              sourceUrl: item.source_url,
+              createdAt: item.created_at,
+              updatedAt: item.updated_at,
             })),
       };
     }
@@ -103,7 +151,9 @@ class FakeDatabase {
     if (sql.includes("select selected_box_id as selectedBoxId")) {
       return {
         get: () =>
-          this.panelState
+          FakeDatabase.omitPanelStateRow
+            ? undefined
+            : this.panelState
             ? {
                 selectedBoxId: this.panelState.selected_box_id,
                 quickPanelOpen: this.panelState.quick_panel_open,
@@ -136,6 +186,10 @@ vi.mock("better-sqlite3", () => ({
 import { createStore } from "./store";
 
 describe("createStore", () => {
+  afterEach(() => {
+    FakeDatabase.omitPanelStateRow = false;
+  });
+
   it("bootstraps an inbox box and empty panel state", () => {
     const store = createStore("brain-desktop.db");
 
@@ -145,6 +199,44 @@ describe("createStore", () => {
     expect(snapshot.boxes[0].name).toBe("Inbox");
     expect(snapshot.panelState.selectedBoxId).toBe(snapshot.boxes[0].id);
     expect(snapshot.items).toEqual([]);
+  });
+
+  it("creates a text item in the selected box", () => {
+    const store = createStore("brain-desktop.db");
+
+    const snapshot = store.captureTextOrLink("Collect this reference note");
+
+    expect(snapshot.items[0].kind).toBe("text");
+    expect(snapshot.items[0].content).toBe("Collect this reference note");
+    expect(snapshot.items[0].boxId).toBe(snapshot.panelState.selectedBoxId);
+  });
+
+  it("creates a link item with sourceUrl metadata", () => {
+    const store = createStore("brain-desktop.db");
+
+    const snapshot = store.captureTextOrLink("https://example.com/inspiration");
+
+    expect(snapshot.items[0].kind).toBe("link");
+    expect(snapshot.items[0].title).toBe("https://example.com/inspiration");
+    expect(snapshot.items[0].sourceUrl).toBe("https://example.com/inspiration");
+  });
+
+  it("updates a link title after enrichment", () => {
+    const store = createStore("brain-desktop.db");
+    const created = store.captureTextOrLink("https://example.com/inspiration");
+
+    const snapshot = store.updateLinkTitle(created.items[0].id, "Example Inspiration");
+
+    expect(snapshot?.items[0].title).toBe("Example Inspiration");
+  });
+
+  it("falls back to Inbox when no selected box exists", () => {
+    FakeDatabase.omitPanelStateRow = true;
+    const store = createStore("brain-desktop.db");
+
+    const snapshot = store.getWorkbenchSnapshot();
+
+    expect(snapshot.panelState.selectedBoxId).toBe(snapshot.boxes[0].id);
   });
 
   it("closes the backing database handle", () => {

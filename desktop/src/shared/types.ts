@@ -14,6 +14,9 @@ export type Item = {
   kind: ItemKind;
   title: string;
   content: string;
+  sourceUrl: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PanelState = {
