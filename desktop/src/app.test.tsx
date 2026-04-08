@@ -27,6 +27,7 @@ beforeEach(() => {
   window.brainDesktop = {
     bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
     captureTextOrLink: vi.fn(),
+    captureDroppedPaths: vi.fn(),
     enrichLinkTitle: vi.fn(),
   };
 });
@@ -148,6 +149,7 @@ describe("preload bridge", () => {
       expect.objectContaining({
         bootstrap: expect.any(Function),
         captureTextOrLink: expect.any(Function),
+        captureDroppedPaths: expect.any(Function),
         enrichLinkTitle: expect.any(Function),
       })
     );
@@ -158,11 +160,13 @@ describe("preload bridge", () => {
     const exposedApi = electronMocks.exposeInMainWorld.mock.calls[0]?.[1] as {
       bootstrap: () => Promise<unknown>;
       captureTextOrLink: (input: string) => Promise<unknown>;
+      captureDroppedPaths: (paths: string[]) => Promise<unknown>;
       enrichLinkTitle: (itemId: number, url: string) => Promise<unknown>;
     };
 
     await exposedApi.bootstrap();
     await exposedApi.captureTextOrLink("Quick note");
+    await exposedApi.captureDroppedPaths(["C:\\assets\\hero.png"]);
     await exposedApi.enrichLinkTitle(42, "https://example.com");
 
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, "workbench/bootstrap");
@@ -173,6 +177,11 @@ describe("preload bridge", () => {
     );
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(
       3,
+      "workbench/capture-dropped-paths",
+      ["C:\\assets\\hero.png"]
+    );
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(
+      4,
       "workbench/enrich-link-title",
       42,
       "https://example.com"

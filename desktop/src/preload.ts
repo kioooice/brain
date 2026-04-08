@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld("brainDesktop", {
   captureTextOrLink(input: string): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.captureTextOrLink, input);
   },
+  captureDroppedPaths(paths: string[]): Promise<WorkbenchSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.captureDroppedPaths, paths);
+  },
   enrichLinkTitle(itemId: number, url: string): Promise<WorkbenchSnapshot | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.enrichLinkTitle, itemId, url);
   },

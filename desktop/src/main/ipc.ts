@@ -5,6 +5,9 @@ import type { DesktopStore } from "./store";
 export function registerIpc(store: DesktopStore) {
   ipcMain.handle(IPC_CHANNELS.bootstrap, () => store.getWorkbenchSnapshot());
   ipcMain.handle(IPC_CHANNELS.captureTextOrLink, (_event, input: string) => store.captureTextOrLink(input));
+  ipcMain.handle(IPC_CHANNELS.captureDroppedPaths, (_event, paths: string[]) =>
+    store.captureDroppedPaths(paths)
+  );
   ipcMain.handle(IPC_CHANNELS.enrichLinkTitle, async (_event, itemId: number, url: string) => {
     try {
       const response = await fetch(url);
