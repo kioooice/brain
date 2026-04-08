@@ -15,6 +15,8 @@ export type Item = {
   title: string;
   content: string;
   sourceUrl: string;
+  sourcePath: string;
+  bundleCount: number;
   createdAt: string;
   updatedAt: string;
 };

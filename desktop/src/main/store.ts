@@ -1,9 +1,18 @@
 import Database from "better-sqlite3";
+import { basename, extname } from "node:path";
 import type { Box, Item, WorkbenchSnapshot } from "../shared/types";
+
+export type BundleEntry = {
+  entryPath: string;
+  entryKind: "file" | "folder";
+  sortOrder: number;
+};
 
 export type DesktopStore = {
   getWorkbenchSnapshot: () => WorkbenchSnapshot;
   captureTextOrLink: (input: string) => WorkbenchSnapshot;
+  captureDroppedPaths: (paths: string[]) => WorkbenchSnapshot;
+  getBundleEntries: (bundleItemId: number) => BundleEntry[];
   updateLinkTitle: (itemId: number, title: string) => WorkbenchSnapshot | null;
   close: () => void;
 };
@@ -25,8 +34,16 @@ export function createStore(filename: string): DesktopStore {
       title text not null,
       content text not null default '',
       source_url text not null default '',
+      source_path text not null default '',
       created_at text not null default '',
       updated_at text not null default ''
+    );
+    create table if not exists bundle_entries (
+      id integer primary key autoincrement,
+      bundle_item_id integer not null,
+      entry_path text not null,
+      entry_kind text not null,
+      sort_order integer not null
     );
     create table if not exists panel_state (
       id integer primary key check (id = 1),
@@ -36,6 +53,7 @@ export function createStore(filename: string): DesktopStore {
   `);
   for (const statement of [
     "alter table items add column source_url text not null default ''",
+    "alter table items add column source_path text not null default ''",
     "alter table items add column created_at text not null default ''",
     "alter table items add column updated_at text not null default ''",
   ]) {
@@ -77,6 +95,14 @@ export function createStore(filename: string): DesktopStore {
     return firstLine || "Quick note";
   }
 
+  function titleFromPath(filePath: string) {
+    return basename(filePath) || filePath;
+  }
+
+  function isLikelyFolderPath(filePath: string) {
+    return extname(filePath) === "";
+  }
+
   function readWorkbenchSnapshot(): WorkbenchSnapshot {
     const boxes = db
       .prepare(
@@ -85,7 +111,7 @@ export function createStore(filename: string): DesktopStore {
       .all() as Box[];
     const items = db
       .prepare(
-        "select id, box_id as boxId, kind, title, content, source_url as sourceUrl, created_at as createdAt, updated_at as updatedAt from items order by id desc"
+        "select items.id, items.box_id as boxId, items.kind, items.title, items.content, items.source_url as sourceUrl, items.source_path as sourcePath, coalesce(bundle_counts.bundleCount, 0) as bundleCount, items.created_at as createdAt, items.updated_at as updatedAt from items left join (select bundle_item_id, count(*) as bundleCount from bundle_entries group by bundle_item_id) bundle_counts on bundle_counts.bundle_item_id = items.id order by items.id desc"
       )
       .all() as Item[];
     const panelStateRow = db
@@ -123,18 +149,81 @@ export function createStore(filename: string): DesktopStore {
       const link = isHttpUrl(trimmed);
       const timestamp = nowIso();
       db.prepare(`
-        insert into items (box_id, kind, title, content, source_url, created_at, updated_at)
-        values (?, ?, ?, ?, ?, ?, ?)
+        insert into items (box_id, kind, title, content, source_url, source_path, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         targetBoxId,
         link ? "link" : "text",
         link ? trimmed : deriveTextTitle(trimmed),
         link ? trimmed : trimmed,
         link ? trimmed : "",
+        "",
         timestamp,
         timestamp
       );
       return readWorkbenchSnapshot();
+    },
+    captureDroppedPaths(paths: string[]): WorkbenchSnapshot {
+      const cleanedPaths = paths.map((value) => value.trim()).filter(Boolean);
+      const targetBoxId = getTargetBoxId();
+      if (!cleanedPaths.length || !targetBoxId) {
+        return readWorkbenchSnapshot();
+      }
+
+      const timestamp = nowIso();
+      const shouldBundle = cleanedPaths.length > 1 || cleanedPaths.some(isLikelyFolderPath);
+
+      if (!shouldBundle) {
+        const singlePath = cleanedPaths[0];
+        db.prepare(`
+          insert into items (box_id, kind, title, content, source_url, source_path, created_at, updated_at)
+          values (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          targetBoxId,
+          "file",
+          titleFromPath(singlePath),
+          singlePath,
+          "",
+          singlePath,
+          timestamp,
+          timestamp
+        );
+        return readWorkbenchSnapshot();
+      }
+
+      const summary = `${cleanedPaths.length} item${cleanedPaths.length === 1 ? "" : "s"}`;
+      const result = db.prepare(`
+        insert into items (box_id, kind, title, content, source_url, source_path, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        targetBoxId,
+        "bundle",
+        "Dropped bundle",
+        summary,
+        "",
+        "",
+        timestamp,
+        timestamp
+      ) as { lastInsertRowid: number | bigint };
+
+      const bundleItemId = Number(result.lastInsertRowid);
+      const insertEntry = db.prepare(`
+        insert into bundle_entries (bundle_item_id, entry_path, entry_kind, sort_order)
+        values (?, ?, ?, ?)
+      `);
+
+      cleanedPaths.forEach((entryPath, index) => {
+        insertEntry.run(bundleItemId, entryPath, isLikelyFolderPath(entryPath) ? "folder" : "file", index);
+      });
+
+      return readWorkbenchSnapshot();
+    },
+    getBundleEntries(bundleItemId: number): BundleEntry[] {
+      return db
+        .prepare(
+          "select entry_path as entryPath, entry_kind as entryKind, sort_order as sortOrder from bundle_entries where bundle_item_id = ? order by sort_order asc"
+        )
+        .all(bundleItemId) as BundleEntry[];
     },
     updateLinkTitle(itemId: number, title: string): WorkbenchSnapshot | null {
       const trimmed = title.trim();

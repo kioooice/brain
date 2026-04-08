@@ -15,8 +15,17 @@ type ItemRow = {
   title: string;
   content: string;
   source_url: string;
+  source_path: string;
   created_at: string;
   updated_at: string;
+};
+
+type BundleEntryRow = {
+  id: number;
+  bundle_item_id: number;
+  entry_path: string;
+  entry_kind: "file" | "folder";
+  sort_order: number;
 };
 
 type PanelStateRow = {
@@ -28,6 +37,7 @@ class FakeDatabase {
   static omitPanelStateRow = false;
   private boxes: BoxRow[] = [];
   private items: ItemRow[] = [];
+  private bundleEntries: BundleEntryRow[] = [];
   private panelState: PanelStateRow | null = null;
   private lastInsertRowid = 0;
   closed = false;
@@ -80,6 +90,7 @@ class FakeDatabase {
           title: string,
           content: string,
           sourceUrl: string,
+          sourcePath: string,
           createdAt: string,
           updatedAt: string
         ) => {
@@ -91,8 +102,25 @@ class FakeDatabase {
             title,
             content,
             source_url: sourceUrl,
+            source_path: sourcePath,
             created_at: createdAt,
             updated_at: updatedAt,
+          });
+          return { lastInsertRowid: id };
+        },
+      };
+    }
+
+    if (sql.includes("insert into bundle_entries")) {
+      return {
+        run: (bundleItemId: number, entryPath: string, entryKind: "file" | "folder", sortOrder: number) => {
+          const id = ++this.lastInsertRowid;
+          this.bundleEntries.push({
+            id,
+            bundle_item_id: bundleItemId,
+            entry_path: entryPath,
+            entry_kind: entryKind,
+            sort_order: sortOrder,
           });
           return { lastInsertRowid: id };
         },
@@ -129,7 +157,7 @@ class FakeDatabase {
       };
     }
 
-    if (sql.includes("select id, box_id as boxId, kind, title, content, source_url as sourceUrl")) {
+    if (sql.includes("select items.id, items.box_id as boxId")) {
       return {
         all: () =>
           this.items
@@ -142,8 +170,25 @@ class FakeDatabase {
               title: item.title,
               content: item.content,
               sourceUrl: item.source_url,
+              sourcePath: item.source_path,
+              bundleCount: this.bundleEntries.filter((entry) => entry.bundle_item_id === item.id)
+                .length,
               createdAt: item.created_at,
               updatedAt: item.updated_at,
+            })),
+      };
+    }
+
+    if (sql.includes("from bundle_entries where bundle_item_id = ? order by sort_order asc")) {
+      return {
+        all: (bundleItemId: number) =>
+          this.bundleEntries
+            .filter((entry) => entry.bundle_item_id === bundleItemId)
+            .sort((left, right) => left.sort_order - right.sort_order)
+            .map((entry) => ({
+              entryPath: entry.entry_path,
+              entryKind: entry.entry_kind,
+              sortOrder: entry.sort_order,
             })),
       };
     }
@@ -209,6 +254,7 @@ describe("createStore", () => {
     expect(snapshot.items[0].kind).toBe("text");
     expect(snapshot.items[0].content).toBe("Collect this reference note");
     expect(snapshot.items[0].boxId).toBe(snapshot.panelState.selectedBoxId);
+    expect(snapshot.items[0].sourcePath).toBe("");
   });
 
   it("creates a link item with sourceUrl metadata", () => {
@@ -237,6 +283,40 @@ describe("createStore", () => {
     const snapshot = store.getWorkbenchSnapshot();
 
     expect(snapshot.panelState.selectedBoxId).toBe(snapshot.boxes[0].id);
+  });
+
+  it("creates a file item from one dropped path", () => {
+    const store = createStore("brain-desktop.db");
+
+    const snapshot = store.captureDroppedPaths(["C:\\assets\\hero.png"]);
+
+    expect(snapshot.items[0].kind).toBe("file");
+    expect(snapshot.items[0].title).toBe("hero.png");
+    expect(snapshot.items[0].sourcePath).toBe("C:\\assets\\hero.png");
+  });
+
+  it("creates one bundle from multiple dropped paths", () => {
+    const store = createStore("brain-desktop.db");
+
+    const snapshot = store.captureDroppedPaths([
+      "C:\\assets\\hero.png",
+      "C:\\assets\\detail.png",
+    ]);
+
+    expect(snapshot.items[0].kind).toBe("bundle");
+    expect(snapshot.items[0].bundleCount).toBe(2);
+  });
+
+  it("creates one bundle from a dropped folder path", () => {
+    const store = createStore("brain-desktop.db");
+
+    const snapshot = store.captureDroppedPaths(["C:\\assets\\moodboard"]);
+
+    expect(snapshot.items[0].kind).toBe("bundle");
+    expect(snapshot.items[0].bundleCount).toBe(1);
+    expect(store.getBundleEntries(snapshot.items[0].id)).toEqual([
+      { entryPath: "C:\\assets\\moodboard", entryKind: "folder", sortOrder: 0 },
+    ]);
   });
 
   it("closes the backing database handle", () => {
