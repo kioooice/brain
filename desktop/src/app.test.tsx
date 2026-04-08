@@ -1,13 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
+import type { WorkbenchSnapshot } from "./shared/types";
 
 const electronMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
   invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
-const initialSnapshot = {
+const initialSnapshot: WorkbenchSnapshot = {
   boxes: [{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }],
   items: [],
   panelState: { selectedBoxId: 1, quickPanelOpen: true },

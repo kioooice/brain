@@ -16,7 +16,18 @@ describe("AppShell", () => {
             { id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 },
             { id: 2, name: "Brand", color: "#2563eb", description: "", sortOrder: 1 },
           ],
-          items: [{ id: 11, boxId: 2, kind: "image", title: "Hero ref", content: "" }],
+          items: [
+            {
+              id: 11,
+              boxId: 2,
+              kind: "image",
+              title: "Hero ref",
+              content: "",
+              sourceUrl: "",
+              createdAt: "2026-04-08T00:00:00.000Z",
+              updatedAt: "2026-04-08T00:00:00.000Z",
+            },
+          ],
           panelState: { selectedBoxId: 2, quickPanelOpen: true },
         }}
       />
