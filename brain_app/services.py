@@ -163,6 +163,51 @@ def get_boxes() -> list[Box]:
     return Box.query.order_by(Box.sort_order.asc(), Box.created_at.asc()).all()
 
 
+def update_box(box_id: int, name: str, color: str, description: str) -> Box:
+    box = db.session.get(Box, box_id)
+    if not box:
+        raise ValueError("盒子不存在")
+
+    normalized_name = (name or "").strip()
+    if not normalized_name:
+        raise ValueError("盒子名称不能为空")
+
+    duplicate = Box.query.filter(Box.name == normalized_name, Box.id != box.id).first()
+    if duplicate:
+        raise ValueError("盒子名称已存在")
+
+    box.name = normalized_name
+    box.color = (color or "").strip() or "#f97316"
+    box.description = (description or "").strip()
+    db.session.commit()
+    return box
+
+
+def move_box(box_id: int, direction: str) -> list[Box]:
+    if direction not in {"up", "down"}:
+        raise ValueError("无效的移动方向")
+
+    boxes = get_boxes()
+    current_index = next((index for index, box in enumerate(boxes) if box.id == box_id), None)
+    if current_index is None:
+        raise ValueError("盒子不存在")
+
+    if direction == "up":
+        if current_index == 0:
+            raise ValueError("已经在最上面")
+        swap_index = current_index - 1
+    else:
+        if current_index == len(boxes) - 1:
+            raise ValueError("已经在最下面")
+        swap_index = current_index + 1
+
+    current_box = boxes[current_index]
+    swap_box = boxes[swap_index]
+    current_box.sort_order, swap_box.sort_order = swap_box.sort_order, current_box.sort_order
+    db.session.commit()
+    return get_boxes()
+
+
 def get_inbox_items(show_sorted: bool = False) -> list[Inspiration]:
     query = Inspiration.query.order_by(Inspiration.created_at.desc())
     if not show_sorted:

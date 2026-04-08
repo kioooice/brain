@@ -12,9 +12,12 @@ from brain_app.extensions import db
 from brain_app.models import Box, Inspiration
 from brain_app.services import (
     extract_title_from_url,
+    get_boxes,
     get_inbox_items,
     place_item_into_box,
     suggest_boxes_for_item,
+    move_box,
+    update_box,
 )
 from brain_app.constants import STATUS_DONE, STATUS_INBOX, STATUS_TODO, TYPE_IMAGE, TYPE_LINK, TYPE_TEXT
 
@@ -131,6 +134,66 @@ class TestAppCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.get_json()
         self.assertFalse(payload["success"])
+
+    def test_update_box_updates_name_color_and_description(self):
+        with self.app.app_context():
+            box = Box(name="产品灵感", color="#f97316", description="旧描述", sort_order=1)
+            db.session.add(box)
+            db.session.commit()
+
+            updated = update_box(
+                box.id,
+                name="设计参考",
+                color="#2563eb",
+                description="新的说明",
+            )
+
+            self.assertEqual(updated.name, "设计参考")
+            self.assertEqual(updated.color, "#2563eb")
+            self.assertEqual(updated.description, "新的说明")
+
+    def test_update_box_rejects_blank_or_duplicate_name(self):
+        with self.app.app_context():
+            first = Box(name="产品灵感", color="#f97316", sort_order=1)
+            second = Box(name="设计参考", color="#2563eb", sort_order=2)
+            db.session.add_all([first, second])
+            db.session.commit()
+
+            with self.assertRaisesRegex(ValueError, "盒子名称不能为空"):
+                update_box(first.id, name="   ", color="#f97316", description="")
+
+            with self.assertRaisesRegex(ValueError, "盒子名称已存在"):
+                update_box(first.id, name="设计参考", color="#f97316", description="")
+
+    def test_move_box_swaps_sort_order_with_adjacent_box(self):
+        with self.app.app_context():
+            first = Box(name="收集", color="#f97316", sort_order=1)
+            second = Box(name="设计参考", color="#2563eb", sort_order=2)
+            third = Box(name="实现想法", color="#22c55e", sort_order=3)
+            db.session.add_all([first, second, third])
+            db.session.commit()
+
+            move_box(second.id, "up")
+            self.assertEqual([box.name for box in get_boxes()], ["设计参考", "收集", "实现想法"])
+
+            move_box(second.id, "down")
+            self.assertEqual([box.name for box in get_boxes()], ["收集", "设计参考", "实现想法"])
+
+    def test_move_box_rejects_invalid_and_out_of_range_moves(self):
+        with self.app.app_context():
+            first = Box(name="收集", color="#f97316", sort_order=1)
+            second = Box(name="设计参考", color="#2563eb", sort_order=2)
+            db.session.add_all([first, second])
+            db.session.commit()
+
+            with self.assertRaisesRegex(ValueError, "无效的移动方向"):
+                move_box(first.id, "left")
+
+            with self.assertRaisesRegex(ValueError, "已经在最上面"):
+                move_box(first.id, "up")
+
+            with self.assertRaisesRegex(ValueError, "已经在最下面"):
+                move_box(second.id, "down")
 
     def test_open_box_shows_box_contents_on_index(self):
         with self.app.app_context():
