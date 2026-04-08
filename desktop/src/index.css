@@ -97,6 +97,12 @@ body {
   line-height: 1.5;
 }
 
+.capture-form {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
 .capture-field {
   display: grid;
   gap: 10px;
@@ -125,6 +131,34 @@ body {
 
 .capture-input::placeholder {
   color: #9d8a77;
+}
+
+.capture-button {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 16px;
+  background: #231815;
+  color: #fff9f2;
+  font: inherit;
+  font-weight: 600;
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease;
+}
+
+.capture-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.capture-button:disabled {
+  opacity: 0.7;
+}
+
+.capture-error {
+  margin: 0;
+  color: #b43f24;
+  font-size: 0.88rem;
 }
 
 .rail-header,
