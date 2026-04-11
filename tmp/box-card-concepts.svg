@@ -1,0 +1,89 @@
+<svg width="1560" height="620" viewBox="0 0 1560 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1560" height="620" rx="28" fill="#F7F7F5"/>
+
+  <text x="60" y="62" fill="#1E1E1B" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700">盒子卡片方案对比</text>
+  <text x="60" y="94" fill="#7B7A75" font-family="Segoe UI, Arial, sans-serif" font-size="16">目标：避免单色大底 + 单调白条，增强层次，但保持简洁桌面工具感</text>
+
+  <g transform="translate(60 140)">
+    <text x="0" y="0" fill="#1E1E1B" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">A. 浮层贴纸</text>
+    <text x="0" y="28" fill="#7B7A75" font-family="Segoe UI, Arial, sans-serif" font-size="15">推荐：最稳，轻量，有层次，和你现在结构最兼容</text>
+
+    <rect x="0" y="58" width="440" height="360" rx="30" fill="#FFFFFF" stroke="#E7E4DD"/>
+    <rect x="0" y="58" width="440" height="250" rx="30" fill="#FFE8D1"/>
+    <rect x="0" y="58" width="440" height="250" rx="30" fill="url(#glowA)"/>
+    <rect x="34" y="92" width="156" height="48" rx="18" fill="rgba(255,255,255,0.78)" stroke="#F3D2B5"/>
+    <text x="112" y="123" text-anchor="middle" fill="#211F1C" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Inbox</text>
+    <rect x="34" y="170" width="168" height="30" rx="15" fill="rgba(255,255,255,0.74)"/>
+    <rect x="34" y="212" width="112" height="24" rx="12" fill="rgba(255,255,255,0.56)"/>
+    <rect x="230" y="162" width="170" height="104" rx="22" fill="rgba(255,255,255,0.38)" stroke="rgba(255,255,255,0.52)"/>
+    <circle cx="263" cy="193" r="12" fill="#FF8D3A"/>
+    <rect x="284" y="181" width="88" height="18" rx="9" fill="rgba(255,255,255,0.76)"/>
+    <rect x="34" y="308" width="440" height="110" rx="0" fill="#FFFFFF"/>
+    <text x="40" y="358" fill="#7E7B74" font-family="Segoe UI, Arial, sans-serif" font-size="15">特点：彩色区里有几张“纸片/贴纸”层次，底部只保留名称或操作</text>
+
+    <rect x="0" y="450" width="440" height="114" rx="22" fill="#FFFDFB" stroke="#ECE7DF"/>
+    <text x="24" y="485" fill="#262521" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">适合</text>
+    <text x="24" y="518" fill="#6F6D67" font-family="Segoe UI, Arial, sans-serif" font-size="16">保留现在卡片结构，只替换视觉层；实现成本最低</text>
+    <text x="24" y="548" fill="#6F6D67" font-family="Segoe UI, Arial, sans-serif" font-size="16">比纯色块丰富，但不会花哨</text>
+  </g>
+
+  <g transform="translate(560 140)">
+    <text x="0" y="0" fill="#1E1E1B" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">B. 海报封面</text>
+    <text x="0" y="28" fill="#7B7A75" font-family="Segoe UI, Arial, sans-serif" font-size="15">更设计化：名字作为主标题放在彩色区中央</text>
+
+    <rect x="0" y="58" width="440" height="360" rx="30" fill="#FFFFFF" stroke="#E4E7F0"/>
+    <rect x="0" y="58" width="440" height="250" rx="30" fill="url(#posterB)"/>
+    <circle cx="120" cy="132" r="120" fill="rgba(255,255,255,0.24)"/>
+    <circle cx="352" cy="260" r="116" fill="rgba(255,255,255,0.18)"/>
+    <text x="220" y="184" text-anchor="middle" fill="#1B2340" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700">123</text>
+    <text x="220" y="220" text-anchor="middle" fill="rgba(27,35,64,0.64)" font-family="Segoe UI, Arial, sans-serif" font-size="17">Project Box</text>
+    <rect x="0" y="308" width="440" height="110" rx="0" fill="#FFFFFF"/>
+    <rect x="30" y="340" width="112" height="30" rx="15" fill="#F3F5FB"/>
+    <text x="86" y="360" text-anchor="middle" fill="#616A87" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">最近 3 项</text>
+    <rect x="168" y="340" width="82" height="30" rx="15" fill="#F3F5FB"/>
+    <text x="209" y="360" text-anchor="middle" fill="#616A87" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">图片</text>
+    <rect x="276" y="340" width="98" height="30" rx="15" fill="#F3F5FB"/>
+    <text x="325" y="360" text-anchor="middle" fill="#616A87" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600">拖入文件</text>
+
+    <rect x="0" y="450" width="440" height="114" rx="22" fill="#FFFDFB" stroke="#E7EAF1"/>
+    <text x="24" y="485" fill="#262521" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">适合</text>
+    <text x="24" y="518" fill="#6F6D67" font-family="Segoe UI, Arial, sans-serif" font-size="16">更强调“封面感”，打开主界面时更像真正的盒子库</text>
+    <text x="24" y="548" fill="#6F6D67" font-family="Segoe UI, Arial, sans-serif" font-size="16">气质更强，但比 A 更重</text>
+  </g>
+
+  <g transform="translate(1060 140)">
+    <text x="0" y="0" fill="#1E1E1B" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">C. 文件夹卡</text>
+    <text x="0" y="28" fill="#7B7A75" font-family="Segoe UI, Arial, sans-serif" font-size="15">更偏收纳器：顶部像文件夹页签，不靠大色块取胜</text>
+
+    <rect x="0" y="58" width="440" height="360" rx="30" fill="#FFFFFF" stroke="#E6E6E2"/>
+    <path d="M38 112C38 99.8497 47.8497 90 60 90H165C174.389 90 183.186 94.4885 188.662 102.074L196 112H392C404.15 112 414 121.85 414 134V302H38V112Z" fill="#E7F3EA" stroke="#D5E9DA"/>
+    <rect x="38" y="132" width="376" height="170" rx="22" fill="url(#folderC)" stroke="#DCEBDF"/>
+    <rect x="68" y="162" width="126" height="34" rx="17" fill="rgba(255,255,255,0.8)"/>
+    <text x="131" y="184" text-anchor="middle" fill="#284534" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">12</text>
+    <rect x="68" y="216" width="132" height="22" rx="11" fill="rgba(255,255,255,0.55)"/>
+    <rect x="68" y="250" width="86" height="22" rx="11" fill="rgba(255,255,255,0.46)"/>
+    <rect x="0" y="308" width="440" height="110" rx="0" fill="#FFFFFF"/>
+    <text x="36" y="356" fill="#2A2925" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">更像真实收纳盒</text>
+    <text x="36" y="384" fill="#77746F" font-family="Segoe UI, Arial, sans-serif" font-size="15">弱化纯色背景，用“文件夹/页签”语言代替</text>
+
+    <rect x="0" y="450" width="440" height="114" rx="22" fill="#FFFDFB" stroke="#E7E9E4"/>
+    <text x="24" y="485" fill="#262521" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">适合</text>
+    <text x="24" y="518" fill="#6F6D67" font-family="Segoe UI, Arial, sans-serif" font-size="16">如果你想更像本地收纳工具，而不是视觉卡片库</text>
+    <text x="24" y="548" fill="#6F6D67" font-family="Segoe UI, Arial, sans-serif" font-size="16">更克制，但辨识度稍弱</text>
+  </g>
+
+  <defs>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(240 164) rotate(90) scale(210 260)">
+      <stop stop-color="#FFF3E6"/>
+      <stop offset="1" stop-color="#FFDDBA"/>
+    </radialGradient>
+    <linearGradient id="posterB" x1="0" y1="58" x2="440" y2="308" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C8D7FF"/>
+      <stop offset="1" stop-color="#B8C8F3"/>
+    </linearGradient>
+    <linearGradient id="folderC" x1="38" y1="132" x2="414" y2="302" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D9F0DE"/>
+      <stop offset="1" stop-color="#EAF6EC"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -6,7 +6,7 @@ type QuickCaptureProps = {
 };
 
 export function QuickCapture({
-  activeBoxName = "Inbox",
+  activeBoxName = "收件箱",
   onSubmit = async () => undefined,
 }: QuickCaptureProps = {}) {
   const [value, setValue] = useState("");
@@ -26,34 +26,34 @@ export function QuickCapture({
       await onSubmit(trimmed);
       setValue("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Capture failed");
+      setError(cause instanceof Error ? cause.message : "收集失败");
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <section className="quick-capture" aria-label="Quick Capture">
+    <section className="quick-capture" aria-label="快速收集">
       <div className="quick-capture-copy">
-        <p className="eyebrow">Quick Capture</p>
-        <h2>Pull fresh inspiration into the workbench</h2>
-        <p>New text and links will go into {activeBoxName}</p>
+        <p className="eyebrow">快速收集</p>
+        <h2>把新灵感收进工作台</h2>
+        <p>新的文本和链接会进入 {activeBoxName}</p>
       </div>
 
       <form className="capture-form" onSubmit={handleSubmit}>
         <label className="capture-field">
-          <span className="capture-label">Paste a link or note</span>
+          <span className="capture-label">粘贴链接或笔记</span>
           <input
             className="capture-input"
             type="text"
-            placeholder="Paste a link or note"
+            placeholder="粘贴链接或笔记"
             value={value}
             onChange={(event) => setValue(event.target.value)}
           />
         </label>
 
         <button className="capture-button" type="submit" disabled={submitting}>
-          {submitting ? "Adding..." : "Add"}
+          {submitting ? "添加中..." : "添加"}
         </button>
 
         {error ? <p className="capture-error">{error}</p> : null}

@@ -1,13 +1,85 @@
-import { ipcMain } from "electron";
+import { clipboard, ipcMain, shell } from "electron";
 import { IPC_CHANNELS } from "../shared/ipc";
+import type { WorkbenchSnapshot } from "../shared/types";
 import type { DesktopStore } from "./store";
 
-export function registerIpc(store: DesktopStore) {
+export function registerIpc(
+  store: DesktopStore,
+  options: {
+    onSetSimpleMode?: (enabled: boolean, senderWindowId?: number) => void;
+    onSetAlwaysOnTop?: (enabled: boolean, senderWindowId?: number) => WorkbenchSnapshot | void;
+  } = {}
+) {
   ipcMain.handle(IPC_CHANNELS.bootstrap, () => store.getWorkbenchSnapshot());
+  ipcMain.handle(IPC_CHANNELS.setSimpleMode, (event, enabled: boolean) => {
+    if (options.onSetSimpleMode) {
+      options.onSetSimpleMode(enabled, event.sender.id);
+      return;
+    }
+
+    store.setSimpleMode(enabled);
+  });
+  ipcMain.handle(IPC_CHANNELS.setAlwaysOnTop, (event, enabled: boolean) => {
+    if (options.onSetAlwaysOnTop) {
+      const snapshot = options.onSetAlwaysOnTop(enabled, event.sender.id);
+      if (snapshot) {
+        return snapshot;
+      }
+    }
+
+    return store.setAlwaysOnTop(enabled);
+  });
   ipcMain.handle(IPC_CHANNELS.captureTextOrLink, (_event, input: string) => store.captureTextOrLink(input));
+  ipcMain.handle(IPC_CHANNELS.captureTextOrLinkIntoBox, (_event, input: string, boxId: number) =>
+    store.captureTextOrLinkIntoBox(input, boxId)
+  );
+  ipcMain.handle(IPC_CHANNELS.captureImageData, (_event, dataUrl: string, title: string) =>
+    store.captureImageData(dataUrl, title)
+  );
+  ipcMain.handle(IPC_CHANNELS.captureImageDataIntoBox, (_event, dataUrl: string, title: string, boxId: number) =>
+    store.captureImageDataIntoBox(dataUrl, title, boxId)
+  );
   ipcMain.handle(IPC_CHANNELS.captureDroppedPaths, (_event, paths: string[]) =>
     store.captureDroppedPaths(paths)
   );
+  ipcMain.handle(IPC_CHANNELS.captureDroppedPathsIntoBox, (_event, paths: string[], boxId: number) =>
+    store.captureDroppedPathsIntoBox(paths, boxId)
+  );
+  ipcMain.handle(IPC_CHANNELS.createBox, (_event, name: string) => store.createBox(name));
+  ipcMain.handle(IPC_CHANNELS.updateBox, (_event, boxId: number, name: string, description: string) =>
+    store.updateBox(boxId, name, description)
+  );
+  ipcMain.handle(IPC_CHANNELS.reorderBox, (_event, boxId: number, direction: "up" | "down") =>
+    store.reorderBox(boxId, direction)
+  );
+  ipcMain.handle(IPC_CHANNELS.deleteBox, (_event, boxId: number) => store.deleteBox(boxId));
+  ipcMain.handle(IPC_CHANNELS.deleteItem, (_event, itemId: number) => store.deleteItem(itemId));
+  ipcMain.handle(IPC_CHANNELS.updateItemTitle, (_event, itemId: number, title: string) =>
+    store.updateItemTitle(itemId, title)
+  );
+  ipcMain.handle(IPC_CHANNELS.removeBundleEntry, (_event, itemId: number, entryPath: string) =>
+    store.removeBundleEntry(itemId, entryPath)
+  );
+  ipcMain.handle(IPC_CHANNELS.openPath, async (_event, path: string) => {
+    await shell.openPath(path);
+  });
+  ipcMain.handle(IPC_CHANNELS.openExternal, async (_event, url: string) => {
+    await shell.openExternal(url);
+  });
+  ipcMain.handle(IPC_CHANNELS.copyText, (_event, text: string) => {
+    clipboard.writeText(text);
+  });
+  ipcMain.handle(IPC_CHANNELS.moveItemToBox, (_event, itemId: number, boxId: number) =>
+    store.moveItemToBox(itemId, boxId)
+  );
+  ipcMain.handle(IPC_CHANNELS.moveItemToIndex, (_event, itemId: number, targetIndex: number) =>
+    store.moveItemToIndex(itemId, targetIndex)
+  );
+  ipcMain.handle(IPC_CHANNELS.reorderItem, (_event, itemId: number, direction: "up" | "down") =>
+    store.reorderItem(itemId, direction)
+  );
+  ipcMain.handle(IPC_CHANNELS.getBundleEntries, (_event, itemId: number) => store.getBundleEntries(itemId));
+  ipcMain.handle(IPC_CHANNELS.selectBox, (_event, boxId: number) => store.selectBox(boxId));
   ipcMain.handle(IPC_CHANNELS.enrichLinkTitle, async (_event, itemId: number, url: string) => {
     try {
       const response = await fetch(url);

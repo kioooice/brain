@@ -17,13 +17,23 @@ export type Item = {
   sourceUrl: string;
   sourcePath: string;
   bundleCount: number;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type BundleEntry = {
+  entryPath: string;
+  entryKind: "file" | "folder";
+  sortOrder: number;
+  exists: boolean;
 };
 
 export type PanelState = {
   selectedBoxId: number | null;
   quickPanelOpen: boolean;
+  simpleMode?: boolean;
+  alwaysOnTop?: boolean;
 };
 
 export type WorkbenchSnapshot = {

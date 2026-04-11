@@ -12,13 +12,13 @@ describe("QuickCapture", () => {
 
     render(<QuickCapture activeBoxName="Inbox" onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByPlaceholderText("Paste a link or note"), {
+    fireEvent.change(screen.getByPlaceholderText("粘贴链接或笔记"), {
       target: { value: "https://example.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("https://example.com"));
-    expect(screen.getByPlaceholderText("Paste a link or note")).toHaveValue("");
+    expect(screen.getByPlaceholderText("粘贴链接或笔记")).toHaveValue("");
   });
 
   it("does not submit blank input", async () => {
@@ -26,24 +26,24 @@ describe("QuickCapture", () => {
 
     render(<QuickCapture activeBoxName="Inbox" onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByPlaceholderText("Paste a link or note"), {
+    fireEvent.change(screen.getByPlaceholderText("粘贴链接或笔记"), {
       target: { value: "   " },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
 
     await waitFor(() => expect(onSubmit).not.toHaveBeenCalled());
   });
 
   it("shows an inline error if submit fails", async () => {
-    const onSubmit = vi.fn().mockRejectedValue(new Error("Capture failed"));
+    const onSubmit = vi.fn().mockRejectedValue(new Error("收集失败"));
 
     render(<QuickCapture activeBoxName="Inbox" onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByPlaceholderText("Paste a link or note"), {
+    fireEvent.change(screen.getByPlaceholderText("粘贴链接或笔记"), {
       target: { value: "Broken" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
 
-    expect(await screen.findByText("Capture failed")).toBeInTheDocument();
+    expect(await screen.findByText("收集失败")).toBeInTheDocument();
   });
 });

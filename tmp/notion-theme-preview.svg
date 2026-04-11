@@ -1,0 +1,139 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGlow" x1="220" y1="120" x2="1320" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F3F0EC"/>
+    </linearGradient>
+    <filter id="panelShadow" x="0" y="0" width="1600" height="1000" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="26" flood-color="#000000" flood-opacity="0.05"/>
+    </filter>
+    <filter id="softShadow" x="-40" y="-40" width="1680" height="1080" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="20" flood-color="#000000" flood-opacity="0.04"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1000" rx="28" fill="#ECE8E1"/>
+  <rect x="24" y="24" width="1552" height="952" rx="26" fill="url(#bgGlow)"/>
+  <circle cx="200" cy="120" r="220" fill="#FBF7F1" fill-opacity="0.9"/>
+  <circle cx="1460" cy="860" r="260" fill="#F5F0EA" fill-opacity="0.9"/>
+
+  <g filter="url(#panelShadow)">
+    <rect x="40" y="40" width="280" height="920" rx="24" fill="#FAF8F5" stroke="rgba(0,0,0,0.1)"/>
+    <rect x="340" y="40" width="900" height="920" rx="24" fill="#FFFFFF" stroke="rgba(0,0,0,0.1)"/>
+    <rect x="1260" y="40" width="300" height="920" rx="24" fill="#FBF9F6" stroke="rgba(0,0,0,0.1)"/>
+  </g>
+
+  <text x="76" y="98" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">Brain</text>
+  <text x="76" y="126" fill="#6A655F" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="500">collect and organize sparks</text>
+
+  <rect x="72" y="164" width="216" height="52" rx="16" fill="#F6F5F4" stroke="#E4DED8"/>
+  <text x="104" y="197" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">Quick Capture</text>
+  <circle cx="91" cy="190" r="7" fill="#0075DE"/>
+
+  <text x="76" y="268" fill="#8A837B" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1.2">BOXES</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="72" y="292" width="216" height="100" rx="18" fill="#FFFFFF" stroke="#E2DDD8"/>
+    <rect x="72" y="408" width="216" height="100" rx="18" fill="#F2F9FF" stroke="#BBD9F5"/>
+    <rect x="72" y="524" width="216" height="100" rx="18" fill="#FFFFFF" stroke="#E2DDD8"/>
+    <rect x="72" y="640" width="216" height="100" rx="18" fill="#FFFFFF" stroke="#E2DDD8"/>
+  </g>
+
+  <text x="100" y="338" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Inbox</text>
+  <text x="100" y="366" fill="#6E6761" font-family="Segoe UI, Arial, sans-serif" font-size="14">18 cards</text>
+  <circle cx="92" cy="330" r="10" fill="#E8E3DC"/>
+
+  <text x="100" y="454" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Campaign</text>
+  <text x="100" y="482" fill="#097FE8" font-family="Segoe UI, Arial, sans-serif" font-size="14">42 cards</text>
+  <circle cx="92" cy="446" r="10" fill="#0075DE"/>
+
+  <text x="100" y="570" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Visuals</text>
+  <text x="100" y="598" fill="#6E6761" font-family="Segoe UI, Arial, sans-serif" font-size="14">12 cards</text>
+  <circle cx="92" cy="562" r="10" fill="#D8E6DA"/>
+
+  <text x="100" y="686" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Research</text>
+  <text x="100" y="714" fill="#6E6761" font-family="Segoe UI, Arial, sans-serif" font-size="14">9 cards</text>
+  <circle cx="92" cy="678" r="10" fill="#F0E2D5"/>
+
+  <text x="388" y="92" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="42" font-weight="700">Campaign</text>
+  <text x="388" y="126" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="18">A calm content-first workspace with warm paper surfaces.</text>
+
+  <rect x="388" y="156" width="804" height="96" rx="22" fill="#FAF8F5" stroke="#E2DDD8"/>
+  <text x="420" y="198" fill="#A39E98" font-family="Segoe UI, Arial, sans-serif" font-size="24">Paste a link, note, image, or folder into this box...</text>
+  <rect x="1080" y="180" width="82" height="40" rx="20" fill="#0075DE"/>
+  <text x="1104" y="206" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Save</text>
+
+  <rect x="388" y="276" width="804" height="56" rx="18" fill="#FFFFFF" stroke="#E2DDD8"/>
+  <text x="418" y="311" fill="#6A655F" font-family="Segoe UI, Arial, sans-serif" font-size="16">All</text>
+  <rect x="472" y="290" width="74" height="28" rx="14" fill="#F2F9FF"/>
+  <text x="495" y="309" fill="#097FE8" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">Image</text>
+  <text x="586" y="311" fill="#6A655F" font-family="Segoe UI, Arial, sans-serif" font-size="16">Link</text>
+  <text x="650" y="311" fill="#6A655F" font-family="Segoe UI, Arial, sans-serif" font-size="16">Bundle</text>
+  <rect x="1006" y="288" width="154" height="32" rx="16" fill="#F6F5F4" stroke="#E2DDD8"/>
+  <text x="1038" y="309" fill="#6A655F" font-family="Segoe UI, Arial, sans-serif" font-size="14">Search cards</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="388" y="356" width="252" height="262" rx="22" fill="#FFFFFF" stroke="#E2DDD8"/>
+    <rect x="664" y="356" width="252" height="262" rx="22" fill="#FFFFFF" stroke="#E2DDD8"/>
+    <rect x="940" y="356" width="252" height="262" rx="22" fill="#FFFFFF" stroke="#E2DDD8"/>
+    <rect x="388" y="642" width="252" height="262" rx="22" fill="#FFFFFF" stroke="#E2DDD8"/>
+    <rect x="664" y="642" width="252" height="262" rx="22" fill="#FFFFFF" stroke="#E2DDD8"/>
+    <rect x="940" y="642" width="252" height="262" rx="22" fill="#FFFFFF" stroke="#E2DDD8"/>
+  </g>
+
+  <rect x="412" y="380" width="204" height="122" rx="16" fill="#F6F5F4"/>
+  <rect x="688" y="380" width="204" height="122" rx="16" fill="#F4EFE7"/>
+  <rect x="964" y="380" width="204" height="122" rx="16" fill="#F2F9FF"/>
+  <rect x="412" y="666" width="204" height="122" rx="16" fill="#F8F6F1"/>
+  <rect x="688" y="666" width="204" height="122" rx="16" fill="#F6F5F4"/>
+  <rect x="964" y="666" width="204" height="122" rx="16" fill="#F4EFE7"/>
+
+  <text x="412" y="532" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Poster reference set</text>
+  <text x="412" y="562" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">Warm editorial mood and broad margins.</text>
+  <text x="412" y="833" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Landing page notes</text>
+  <text x="412" y="863" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">Headline alternatives for the next round.</text>
+
+  <text x="688" y="532" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Website bundle</text>
+  <text x="688" y="562" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">6 pages grouped together for easy scan.</text>
+  <text x="688" y="833" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Typography samples</text>
+  <text x="688" y="863" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">Warm neutrals with one blue active accent.</text>
+
+  <text x="964" y="532" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Image drop</text>
+  <text x="964" y="562" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">Paste and drag-in keep a softer document feel.</text>
+  <text x="964" y="833" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Brand references</text>
+  <text x="964" y="863" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">Lighter border and calmer metadata.</text>
+
+  <text x="1292" y="92" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700">Quick Panel</text>
+  <text x="1292" y="122" fill="#6A655F" font-family="Segoe UI, Arial, sans-serif" font-size="15">Details stay quiet and readable.</text>
+
+  <rect x="1292" y="160" width="236" height="108" rx="18" fill="#FFFFFF" stroke="#E2DDD8"/>
+  <text x="1318" y="198" fill="#8A837B" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1.1">TYPE</text>
+  <text x="1318" y="236" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700">Bundle</text>
+
+  <rect x="1292" y="288" width="236" height="164" rx="18" fill="#FFFFFF" stroke="#E2DDD8"/>
+  <text x="1318" y="326" fill="#8A837B" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1.1">NOTES</text>
+  <text x="1318" y="366" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="16">Use quieter borders, less glass,</text>
+  <text x="1318" y="392" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="16">and a single blue highlight.</text>
+  <text x="1318" y="418" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="16">The app should feel like paper</text>
+  <text x="1318" y="444" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="16">not a glossy dashboard.</text>
+
+  <rect x="1292" y="472" width="236" height="172" rx="18" fill="#F6F5F4" stroke="#E2DDD8"/>
+  <text x="1318" y="510" fill="#8A837B" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1.1">PALETTE</text>
+  <circle cx="1332" cy="554" r="13" fill="#1F1B18"/>
+  <text x="1360" y="560" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="15">Text</text>
+  <circle cx="1332" cy="592" r="13" fill="#F6F5F4" stroke="#D9D4CE"/>
+  <text x="1360" y="598" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="15">Surface</text>
+  <circle cx="1332" cy="630" r="13" fill="#0075DE"/>
+  <text x="1360" y="636" fill="#1F1B18" font-family="Segoe UI, Arial, sans-serif" font-size="15">Accent</text>
+
+  <rect x="1292" y="668" width="236" height="236" rx="18" fill="#FFFFFF" stroke="#E2DDD8"/>
+  <text x="1318" y="706" fill="#8A837B" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1.1">DETAIL</text>
+  <rect x="1318" y="734" width="184" height="46" rx="14" fill="#FFFFFF" stroke="#DAD5CF"/>
+  <text x="1340" y="763" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">Search within bundle</text>
+  <rect x="1318" y="796" width="92" height="34" rx="17" fill="#F2F9FF"/>
+  <text x="1344" y="818" fill="#097FE8" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">Image</text>
+  <rect x="1418" y="796" width="84" height="34" rx="17" fill="#F6F5F4"/>
+  <text x="1448" y="818" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">Link</text>
+  <text x="1318" y="870" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">Warm, content-first, and calmer</text>
+  <text x="1318" y="896" fill="#615D59" font-family="Segoe UI, Arial, sans-serif" font-size="15">than a tool-like Raycast style.</text>
+</svg>
