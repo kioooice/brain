@@ -11,6 +11,7 @@ export type ItemKind = "text" | "link" | "image" | "file" | "bundle";
 export type Item = {
   id: number;
   boxId: number;
+  bundleParentId?: number | null;
   kind: ItemKind;
   title: string;
   content: string;
@@ -29,11 +30,24 @@ export type BundleEntry = {
   exists: boolean;
 };
 
+export type BundleMemberItem = Item;
+
+export type WindowBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type SimpleModeView = "ball" | "panel";
+
 export type PanelState = {
   selectedBoxId: number | null;
   quickPanelOpen: boolean;
   simpleMode?: boolean;
   alwaysOnTop?: boolean;
+  simpleModeView?: SimpleModeView;
+  floatingBallBounds?: WindowBounds | null;
 };
 
 export type WorkbenchSnapshot = {

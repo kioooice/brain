@@ -6,13 +6,17 @@ import { registerIpc } from "./main/ipc";
 import { installApplicationMenu, shouldShowNativeMenu } from "./main/menu";
 import { createStore } from "./main/store";
 import {
+  FLOATING_BALL_BOUNDS,
   NORMAL_WINDOW_BOUNDS,
+  type WindowLaunchBounds,
+  resolveFloatingBallBounds,
   resolveLastMainWindowBounds,
   resolveMainModeBounds,
   resolveSimpleModeBounds,
   resolveSimpleModeWindowBounds,
   SIMPLE_WINDOW_BOUNDS,
 } from "./main/window-bounds";
+import type { SimpleModeView } from "./shared/types";
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -21,11 +25,13 @@ if (require("electron-squirrel-startup")) {
   app.quit();
 }
 
+type WindowMode = "main" | "simple-ball" | "simple-panel";
+
 let store: ReturnType<typeof createStore>;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
-let lastWindowMode: "main" | "simple" = "main";
+let lastWindowMode: WindowMode = "main";
 let lastMainWindowBounds: Rectangle | undefined;
 const showNativeMenu = shouldShowNativeMenu(app.isPackaged);
 
@@ -33,59 +39,73 @@ function getSimpleMode() {
   return Boolean(store.getWorkbenchSnapshot().panelState.simpleMode);
 }
 
-function getWindowMode() {
-  return getSimpleMode() ? "simple" : "main";
+function getSimpleModeView() {
+  return store.getWorkbenchSnapshot().panelState.simpleModeView === "panel" ? "panel" : "ball";
 }
 
-function getSimpleModeBounds(): Rectangle {
-  const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  return resolveSimpleModeBounds(workArea);
+function getWindowMode(): WindowMode {
+  if (!getSimpleMode()) {
+    return "main";
+  }
+
+  return getSimpleModeView() === "panel" ? "simple-panel" : "simple-ball";
 }
 
-function positionSimpleModeWindow(window: BrowserWindow, referenceBounds?: Rectangle) {
+function getSimplePanelBounds(referenceBounds?: Rectangle): Rectangle {
   const display = referenceBounds
     ? screen.getDisplayMatching(referenceBounds)
     : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const currentBounds = window.getBounds();
 
-  window.setBounds(
-    resolveSimpleModeWindowBounds(display.workArea, {
-      width: currentBounds.width,
-      height: currentBounds.height,
-    })
+  return referenceBounds
+    ? resolveSimpleModeWindowBounds(display.workArea, {
+        width: referenceBounds.width,
+        height: referenceBounds.height,
+      })
+    : resolveSimpleModeBounds(display.workArea);
+}
+
+function getFloatingBallBounds(referenceBounds?: Rectangle): Rectangle {
+  const snapshot = store.getWorkbenchSnapshot();
+  const rememberedBounds = snapshot.panelState.floatingBallBounds ?? referenceBounds;
+  const display = rememberedBounds
+    ? screen.getDisplayMatching(rememberedBounds)
+    : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+
+  return resolveFloatingBallBounds(display.workArea, rememberedBounds);
+}
+
+function shouldApplyAlwaysOnTop(mode: WindowMode) {
+  return mode !== "main";
+}
+
+function applyWindowAlwaysOnTop(window: BrowserWindow, mode: WindowMode) {
+  window.setAlwaysOnTop(shouldApplyAlwaysOnTop(mode), "normal");
+}
+
+function getWindowBoundsForMode(
+  mode: WindowMode,
+  options: {
+    currentWindowBounds?: Rectangle;
+    previousMode?: WindowMode;
+  } = {}
+): WindowLaunchBounds {
+  if (mode === "main") {
+    return resolveMainModeBounds(lastMainWindowBounds);
+  }
+
+  if (mode === "simple-panel") {
+    const shouldPreservePanelSize =
+      options.previousMode === "simple-panel" && Boolean(options.currentWindowBounds);
+    return getSimplePanelBounds(shouldPreservePanelSize ? options.currentWindowBounds : undefined);
+  }
+
+  return getFloatingBallBounds(
+    options.previousMode === "simple-ball" ? options.currentWindowBounds : undefined
   );
 }
 
-function shouldApplyAlwaysOnTop(simpleMode: boolean) {
-  return simpleMode && Boolean(store.getWorkbenchSnapshot().panelState.alwaysOnTop);
-}
-
-function applyWindowAlwaysOnTop(window: BrowserWindow, simpleMode: boolean) {
-  window.setAlwaysOnTop(shouldApplyAlwaysOnTop(simpleMode), "normal");
-}
-
-function createWindow(simpleMode = getSimpleMode(), bounds?: Rectangle): BrowserWindow {
-  lastWindowMode = simpleMode ? "simple" : "main";
-  const initialBounds = simpleMode ? getSimpleModeBounds() : resolveMainModeBounds(bounds);
-  const window = new BrowserWindow({
-    ...(initialBounds ?? NORMAL_WINDOW_BOUNDS),
-    minWidth: simpleMode ? SIMPLE_WINDOW_BOUNDS.minWidth : NORMAL_WINDOW_BOUNDS.minWidth,
-    minHeight: simpleMode ? SIMPLE_WINDOW_BOUNDS.minHeight : NORMAL_WINDOW_BOUNDS.minHeight,
-    show: false,
-    frame: !simpleMode,
-    titleBarStyle: simpleMode ? "default" : "hiddenInset",
-    autoHideMenuBar: simpleMode || !showNativeMenu,
-    skipTaskbar: simpleMode,
-    backgroundColor: "#f4efe7",
-    webPreferences: {
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-      contextIsolation: true,
-    },
-  });
-
-  window.setMenuBarVisibility(showNativeMenu && !simpleMode);
-  applyWindowAlwaysOnTop(window, simpleMode);
-  if (!simpleMode) {
+function attachWindowBoundsPersistence(window: BrowserWindow, mode: WindowMode) {
+  if (mode === "main") {
     lastMainWindowBounds = window.getBounds();
     window.on("moved", () => {
       lastMainWindowBounds = window.getBounds();
@@ -93,7 +113,46 @@ function createWindow(simpleMode = getSimpleMode(), bounds?: Rectangle): Browser
     window.on("resized", () => {
       lastMainWindowBounds = window.getBounds();
     });
+    return;
   }
+
+  if (mode === "simple-ball") {
+    store.setFloatingBallBounds(window.getBounds());
+    window.on("moved", () => {
+      store.setFloatingBallBounds(window.getBounds());
+    });
+  }
+}
+
+function createWindow(mode: WindowMode, bounds?: WindowLaunchBounds): BrowserWindow {
+  lastWindowMode = mode;
+  const simpleMode = mode !== "main";
+  const panelMode = mode === "simple-panel";
+  const initialBounds = bounds ?? getWindowBoundsForMode(mode);
+  const window = new BrowserWindow({
+    ...(initialBounds ?? NORMAL_WINDOW_BOUNDS),
+    minWidth: panelMode ? SIMPLE_WINDOW_BOUNDS.minWidth : mode === "simple-ball" ? FLOATING_BALL_BOUNDS.width : NORMAL_WINDOW_BOUNDS.minWidth,
+    minHeight: panelMode ? SIMPLE_WINDOW_BOUNDS.minHeight : mode === "simple-ball" ? FLOATING_BALL_BOUNDS.height : NORMAL_WINDOW_BOUNDS.minHeight,
+    resizable: mode !== "simple-ball",
+    maximizable: mode === "main",
+    fullscreenable: mode === "main",
+    show: false,
+    frame: !simpleMode,
+    titleBarStyle: simpleMode ? "default" : "hiddenInset",
+    autoHideMenuBar: simpleMode || !showNativeMenu,
+    skipTaskbar: simpleMode,
+    backgroundColor: mode === "simple-ball" ? "#00000000" : "#f4efe7",
+    transparent: mode === "simple-ball",
+    webPreferences: {
+      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+      contextIsolation: true,
+    },
+  });
+
+  window.setMenuBarVisibility(showNativeMenu && !simpleMode);
+  applyWindowAlwaysOnTop(window, mode);
+  attachWindowBoundsPersistence(window, mode);
+
   window.on("close", (event) => {
     if (!shouldHideWindowToTray(isQuitting)) {
       return;
@@ -103,24 +162,24 @@ function createWindow(simpleMode = getSimpleMode(), bounds?: Rectangle): Browser
     window.hide();
     window.setSkipTaskbar(true);
   });
+
   window.on("closed", () => {
     if (mainWindow === window) {
       mainWindow = null;
     }
   });
+
   window.once("ready-to-show", () => {
-    if (simpleMode) {
-      positionSimpleModeWindow(window, bounds);
-    }
     window.show();
   });
+
   window.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
   return window;
 }
 
-function updateApplicationMenu(simpleMode: boolean) {
+function updateApplicationMenu(mode: WindowMode) {
   installApplicationMenu("Brain Desktop", {
-    simpleMode,
+    simpleMode: mode !== "main",
     showNativeMenu,
     onToggleSimpleMode: handleToggleSimpleMode,
   });
@@ -136,7 +195,7 @@ function ensureTray() {
   tray.setContextMenu(
     buildTrayMenu({
       onOpenMain: () => showWindow("main"),
-      onOpenSimple: () => showWindow("simple"),
+      onOpenSimple: () => showWindow("simple-ball"),
       onQuit: quitApplication,
     })
   );
@@ -146,29 +205,44 @@ function ensureTray() {
   return tray;
 }
 
-function showWindow(mode: "main" | "simple") {
-  const simpleMode = mode === "simple";
-  lastWindowMode = mode;
+function showWindow(mode: WindowMode) {
+  const currentMode = getWindowMode();
+  const nextMode = mode === "simple-ball" || mode === "simple-panel" ? mode : "main";
 
-  if (getSimpleMode() !== simpleMode) {
-    store.setSimpleMode(simpleMode);
-    rebuildWindowForMode(simpleMode);
-    return;
+  if (nextMode === "main") {
+    if (currentMode !== "main") {
+      store.setSimpleMode(false);
+      rebuildWindowForMode("main", currentMode);
+      return;
+    }
+  } else {
+    const desiredView = nextMode === "simple-panel" ? "panel" : "ball";
+    if (!getSimpleMode()) {
+      store.setSimpleMode(true);
+      if (desiredView === "panel") {
+        store.setSimpleModeView("panel");
+      }
+      rebuildWindowForMode(nextMode, currentMode);
+      return;
+    }
+
+    if (getSimpleModeView() !== desiredView) {
+      store.setSimpleModeView(desiredView);
+      rebuildWindowForMode(nextMode, currentMode);
+      return;
+    }
   }
 
-  updateApplicationMenu(simpleMode);
+  updateApplicationMenu(nextMode);
   ensureTray();
 
   if (!mainWindow || mainWindow.isDestroyed()) {
-    mainWindow = createWindow(simpleMode);
+    mainWindow = createWindow(nextMode);
     return;
   }
 
-  mainWindow.setSkipTaskbar(simpleMode);
-  applyWindowAlwaysOnTop(mainWindow, simpleMode);
-  if (simpleMode) {
-    positionSimpleModeWindow(mainWindow);
-  }
+  mainWindow.setSkipTaskbar(nextMode !== "main");
+  applyWindowAlwaysOnTop(mainWindow, nextMode);
 
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
@@ -178,19 +252,25 @@ function showWindow(mode: "main" | "simple") {
   mainWindow.focus();
 }
 
-function rebuildWindowForMode(simpleMode: boolean, previousMode: "main" | "simple" = lastWindowMode) {
+function rebuildWindowForMode(nextMode: WindowMode, previousMode: WindowMode = lastWindowMode) {
   const currentWindow = mainWindow;
-  updateApplicationMenu(simpleMode);
+  updateApplicationMenu(nextMode);
   ensureTray();
   const currentWindowBounds = currentWindow?.getBounds();
 
   lastMainWindowBounds = resolveLastMainWindowBounds({
-    previousMode,
+    previousMode: previousMode === "main" ? "main" : "simple",
     currentWindowBounds,
     lastMainWindowBounds,
   });
 
-  const nextWindow = createWindow(simpleMode, simpleMode ? currentWindowBounds : lastMainWindowBounds);
+  const nextWindow = createWindow(
+    nextMode,
+    getWindowBoundsForMode(nextMode, {
+      currentWindowBounds,
+      previousMode,
+    })
+  );
   mainWindow = nextWindow;
 
   if (currentWindow) {
@@ -209,9 +289,37 @@ function quitApplication() {
 
 function handleToggleSimpleMode(enabled: boolean, senderWindowId?: number) {
   void senderWindowId;
-  const previousMode = getSimpleMode() ? "simple" : "main";
+  const previousMode = getWindowMode();
   store.setSimpleMode(enabled);
-  rebuildWindowForMode(enabled, previousMode);
+  rebuildWindowForMode(enabled ? "simple-ball" : "main", previousMode);
+}
+
+function handleSetSimpleModeView(view: SimpleModeView, senderWindowId?: number) {
+  void senderWindowId;
+  const previousMode = getWindowMode();
+  store.setSimpleModeView(view);
+  rebuildWindowForMode(view === "panel" ? "simple-panel" : "simple-ball", previousMode);
+}
+
+function handleMoveFloatingBall(deltaX: number, deltaY: number, senderWindowId?: number) {
+  const senderWindow =
+    BrowserWindow.getAllWindows().find((window) => window.webContents.id === senderWindowId) ?? mainWindow;
+
+  if (!senderWindow || senderWindow.isDestroyed() || getWindowMode() !== "simple-ball") {
+    return;
+  }
+
+  const currentBounds = senderWindow.getBounds();
+  const display = screen.getDisplayMatching(currentBounds);
+  const nextBounds = resolveFloatingBallBounds(display.workArea, {
+    x: currentBounds.x + Math.round(deltaX),
+    y: currentBounds.y + Math.round(deltaY),
+    width: currentBounds.width,
+    height: currentBounds.height,
+  });
+
+  senderWindow.setBounds(nextBounds);
+  store.setFloatingBallBounds(nextBounds);
 }
 
 function handleSetAlwaysOnTop(enabled: boolean, senderWindowId?: number) {
@@ -220,7 +328,7 @@ function handleSetAlwaysOnTop(enabled: boolean, senderWindowId?: number) {
     BrowserWindow.getAllWindows().find((window) => window.webContents.id === senderWindowId) ?? mainWindow;
 
   if (senderWindow && !senderWindow.isDestroyed()) {
-    applyWindowAlwaysOnTop(senderWindow, Boolean(snapshot.panelState.simpleMode));
+    applyWindowAlwaysOnTop(senderWindow, getWindowMode());
   }
 
   return snapshot;
@@ -230,11 +338,13 @@ app.whenReady().then(() => {
   store = createStore(join(app.getPath("userData"), "brain-desktop.db"));
   registerIpc(store, {
     onSetSimpleMode: handleToggleSimpleMode,
+    onSetSimpleModeView: handleSetSimpleModeView,
+    onMoveFloatingBall: handleMoveFloatingBall,
     onSetAlwaysOnTop: handleSetAlwaysOnTop,
   });
-  updateApplicationMenu(getSimpleMode());
+  updateApplicationMenu(getWindowMode());
   ensureTray();
-  mainWindow = createWindow(getSimpleMode());
+  mainWindow = createWindow(getWindowMode());
 });
 
 app.on("before-quit", () => {
@@ -249,9 +359,9 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    mainWindow = createWindow(getSimpleMode());
+    mainWindow = createWindow(getWindowMode());
     return;
   }
 
-  showWindow(lastWindowMode ?? getWindowMode());
+  showWindow(lastWindowMode);
 });

@@ -8,12 +8,14 @@ function createDropEvent({
   plainText = "",
   uriList = "",
   files = [],
+  types,
 }: {
   type: string;
   paths?: string[];
   plainText?: string;
   uriList?: string;
   files?: File[];
+  types?: string[];
 }) {
   const event = new Event(type, { bubbles: true, cancelable: true }) as Event & {
     dataTransfer?: {
@@ -41,11 +43,13 @@ function createDropEvent({
         }
         return "";
       },
-      types: [
-        ...(paths.length || files.length ? ["Files"] : []),
-        ...(plainText ? ["text/plain"] : []),
-        ...(uriList ? ["text/uri-list"] : []),
-      ],
+      types:
+        types ??
+        [
+          ...(paths.length || files.length ? ["Files"] : []),
+          ...(plainText ? ["text/plain"] : []),
+          ...(uriList ? ["text/uri-list"] : []),
+        ],
     },
   });
 
@@ -97,6 +101,25 @@ describe("WorkspaceDropZone", () => {
     expect(zone).toHaveAttribute("data-drop-active", "true");
   });
 
+  it("shows the active state when external file drag only exposes the Files type", () => {
+    render(
+      <WorkspaceDropZone onDropPaths={vi.fn()}>
+        <div>Canvas</div>
+      </WorkspaceDropZone>
+    );
+
+    const zone = screen.getByLabelText("工作区拖放区");
+    fireEvent(
+      zone,
+      createDropEvent({
+        type: "dragover",
+        types: ["Files"],
+      })
+    );
+
+    expect(zone).toHaveAttribute("data-drop-active", "true");
+  });
+
   it("forwards dropped absolute paths", () => {
     const onDropPaths = vi.fn();
     render(
@@ -114,6 +137,36 @@ describe("WorkspaceDropZone", () => {
     );
 
     expect(onDropPaths).toHaveBeenCalledWith(["C:\\assets\\hero.png", "C:\\assets\\detail.png"]);
+  });
+
+  it("resolves dropped file paths through the desktop bridge when File.path is unavailable", async () => {
+    const onDropPaths = vi.fn();
+    const originalApi = window.brainDesktop;
+    window.brainDesktop = {
+      ...window.brainDesktop,
+      getPathsForFiles: vi.fn().mockReturnValue(["C:\\docs\\brief.docx"]),
+    };
+
+    render(
+      <WorkspaceDropZone onDropPaths={onDropPaths}>
+        <div>Canvas</div>
+      </WorkspaceDropZone>
+    );
+
+    const file = new File(["fake"], "brief.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    fireEvent(
+      screen.getByLabelText("工作区拖放区"),
+      createDropEvent({
+        type: "drop",
+        files: [file],
+      })
+    );
+
+    await waitFor(() => expect(onDropPaths).toHaveBeenCalledWith(["C:\\docs\\brief.docx"]));
+    window.brainDesktop = originalApi;
   });
 
   it("forwards dropped text from the window", () => {

@@ -1,12 +1,30 @@
-import { clipboard, ipcMain, shell } from "electron";
+import { writeFile } from "node:fs/promises";
+import { clipboard, dialog, ipcMain, shell } from "electron";
 import { IPC_CHANNELS } from "../shared/ipc";
-import type { WorkbenchSnapshot } from "../shared/types";
+import type { SimpleModeView, WorkbenchSnapshot } from "../shared/types";
 import type { DesktopStore } from "./store";
+
+function getSafeExportName(bundleName: string) {
+  const normalized = Array.from(bundleName.trim())
+    .map((character) => {
+      if (/[<>:"/\\|?*]/.test(character) || character.charCodeAt(0) < 32) {
+        return "-";
+      }
+
+      return character;
+    })
+    .join("")
+    .replace(/\s+/g, " ");
+  const safe = normalized.slice(0, 80).trim();
+  return safe || "brain-ai-context";
+}
 
 export function registerIpc(
   store: DesktopStore,
   options: {
     onSetSimpleMode?: (enabled: boolean, senderWindowId?: number) => void;
+    onSetSimpleModeView?: (view: SimpleModeView, senderWindowId?: number) => void;
+    onMoveFloatingBall?: (deltaX: number, deltaY: number, senderWindowId?: number) => void;
     onSetAlwaysOnTop?: (enabled: boolean, senderWindowId?: number) => WorkbenchSnapshot | void;
   } = {}
 ) {
@@ -18,6 +36,19 @@ export function registerIpc(
     }
 
     store.setSimpleMode(enabled);
+  });
+  ipcMain.handle(IPC_CHANNELS.setSimpleModeView, (event, view: SimpleModeView) => {
+    if (options.onSetSimpleModeView) {
+      options.onSetSimpleModeView(view, event.sender.id);
+      return;
+    }
+
+    store.setSimpleModeView(view);
+  });
+  ipcMain.handle(IPC_CHANNELS.moveFloatingBall, (event, deltaX: number, deltaY: number) => {
+    if (options.onMoveFloatingBall) {
+      options.onMoveFloatingBall(deltaX, deltaY, event.sender.id);
+    }
   });
   ipcMain.handle(IPC_CHANNELS.setAlwaysOnTop, (event, enabled: boolean) => {
     if (options.onSetAlwaysOnTop) {
@@ -60,6 +91,9 @@ export function registerIpc(
   ipcMain.handle(IPC_CHANNELS.removeBundleEntry, (_event, itemId: number, entryPath: string) =>
     store.removeBundleEntry(itemId, entryPath)
   );
+  ipcMain.handle(IPC_CHANNELS.groupItems, (_event, sourceItemId: number, targetItemId: number) =>
+    store.groupItems(sourceItemId, targetItemId)
+  );
   ipcMain.handle(IPC_CHANNELS.openPath, async (_event, path: string) => {
     await shell.openPath(path);
   });
@@ -68,6 +102,21 @@ export function registerIpc(
   });
   ipcMain.handle(IPC_CHANNELS.copyText, (_event, text: string) => {
     clipboard.writeText(text);
+  });
+  ipcMain.handle(IPC_CHANNELS.exportBundleAi, async (_event, bundleName: string, html: string) => {
+    const defaultFileName = `${getSafeExportName(bundleName)}.html`;
+    const result = await dialog.showSaveDialog({
+      title: "导出给AI",
+      defaultPath: defaultFileName,
+      filters: [{ name: "HTML", extensions: ["html"] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    await writeFile(result.filePath, html, "utf8");
+    return result.filePath;
   });
   ipcMain.handle(IPC_CHANNELS.moveItemToBox, (_event, itemId: number, boxId: number) =>
     store.moveItemToBox(itemId, boxId)

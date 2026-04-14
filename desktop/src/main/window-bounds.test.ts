@@ -1,7 +1,9 @@
 import type { Rectangle } from "electron";
 import { describe, expect, it } from "vitest";
 import {
+  FLOATING_BALL_BOUNDS,
   NORMAL_WINDOW_BOUNDS,
+  resolveFloatingBallBounds,
   resolveLastMainWindowBounds,
   resolveMainModeBounds,
   resolveSimpleModeBounds,
@@ -10,6 +12,45 @@ import {
 } from "./window-bounds";
 
 describe("resolveSimpleModeBounds", () => {
+  it("places the floating ball near the bottom-right corner by default", () => {
+    const workArea: Rectangle = {
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080,
+    };
+
+    expect(resolveFloatingBallBounds(workArea)).toEqual({
+      x: 1920 - FLOATING_BALL_BOUNDS.width - FLOATING_BALL_BOUNDS.margin,
+      y: 1080 - FLOATING_BALL_BOUNDS.height - FLOATING_BALL_BOUNDS.margin,
+      width: FLOATING_BALL_BOUNDS.width,
+      height: FLOATING_BALL_BOUNDS.height,
+    });
+  });
+
+  it("clamps remembered floating-ball bounds back into the active work area", () => {
+    const workArea: Rectangle = {
+      x: 100,
+      y: 20,
+      width: 1440,
+      height: 900,
+    };
+
+    expect(
+      resolveFloatingBallBounds(workArea, {
+        x: 5000,
+        y: -100,
+        width: FLOATING_BALL_BOUNDS.width,
+        height: FLOATING_BALL_BOUNDS.height,
+      })
+    ).toEqual({
+      x: 100 + 1440 - FLOATING_BALL_BOUNDS.width,
+      y: 20,
+      width: FLOATING_BALL_BOUNDS.width,
+      height: FLOATING_BALL_BOUNDS.height,
+    });
+  });
+
   it("places the simple window on the right side and vertically centered", () => {
     const workArea: Rectangle = {
       x: 0,

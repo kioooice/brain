@@ -1,10 +1,13 @@
-import type { BundleEntry, WorkbenchSnapshot } from "./shared/types";
+import type { BundleEntry, SimpleModeView, WorkbenchSnapshot } from "./shared/types";
 
 declare global {
   interface Window {
     brainDesktop: {
       bootstrap(): Promise<WorkbenchSnapshot>;
       setSimpleMode(enabled: boolean): Promise<void>;
+      setSimpleModeView(view: SimpleModeView): Promise<void>;
+      moveFloatingBall(deltaX: number, deltaY: number): Promise<void>;
+      getPathsForFiles(files: File[]): string[];
       setAlwaysOnTop(enabled: boolean): Promise<WorkbenchSnapshot>;
       captureTextOrLink(input: string): Promise<WorkbenchSnapshot>;
       captureTextOrLinkIntoBox(input: string, boxId: number): Promise<WorkbenchSnapshot>;
@@ -19,10 +22,12 @@ declare global {
       deleteItem(itemId: number): Promise<WorkbenchSnapshot>;
       updateItemTitle(itemId: number, title: string): Promise<WorkbenchSnapshot | null>;
       removeBundleEntry(itemId: number, entryPath: string): Promise<WorkbenchSnapshot>;
+      groupItems(sourceItemId: number, targetItemId: number): Promise<WorkbenchSnapshot>;
       selectBox(boxId: number): Promise<WorkbenchSnapshot>;
       openPath(path: string): Promise<void>;
       openExternal(url: string): Promise<void>;
       copyText(text: string): Promise<void>;
+      exportBundleAi(bundleName: string, html: string): Promise<string | null>;
       enrichLinkTitle(itemId: number, url: string): Promise<WorkbenchSnapshot | null>;
       moveItemToBox(itemId: number, boxId: number): Promise<WorkbenchSnapshot>;
       moveItemToIndex(itemId: number, targetIndex: number): Promise<WorkbenchSnapshot>;

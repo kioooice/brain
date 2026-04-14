@@ -6,11 +6,15 @@ function createDropEvent(type: string, paths: string[]) {
   const event = new Event(type, { bubbles: true, cancelable: true }) as Event & {
     dataTransfer?: {
       files: Array<{ path: string }>;
+      items?: Array<{ kind: string; type: string; getAsFile(): File | null }>;
+      getData(type: string): string;
     };
   };
   Object.defineProperty(event, "dataTransfer", {
     value: {
       files: paths.map((path) => ({ path })),
+      items: [],
+      getData: () => "",
     },
   });
   return event;
@@ -268,6 +272,60 @@ describe("AppShell", () => {
     expect(onDropToBox).toHaveBeenCalledWith(2, ["C:\\assets\\hero.png"]);
   });
 
+  it("resolves dropped file paths through the desktop bridge for a target box drop", async () => {
+    const onDropToBox = vi.fn().mockResolvedValue(undefined);
+    const originalApi = window.brainDesktop;
+    window.brainDesktop = {
+      ...window.brainDesktop,
+      getPathsForFiles: vi.fn().mockReturnValue(["C:\\docs\\brief.docx"]),
+    };
+
+    render(
+      <AppShell
+        onQuickCapture={async () => undefined}
+        onDropToBox={onDropToBox}
+        snapshot={{
+          boxes: [
+            { id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 },
+            { id: 2, name: "Brand", color: "#2563eb", description: "", sortOrder: 1 },
+          ],
+          items: [],
+          panelState: { selectedBoxId: 1, quickPanelOpen: true },
+        }}
+      />
+    );
+
+    const file = new File(["fake"], "brief.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const dropEvent = new Event("drop", { bubbles: true, cancelable: true }) as Event & {
+      dataTransfer?: {
+        files: File[];
+        items: Array<{ kind: string; type: string; getAsFile(): File | null }>;
+        getData(type: string): string;
+      };
+    };
+    Object.defineProperty(dropEvent, "dataTransfer", {
+      value: {
+        files: [file],
+        items: [
+          {
+            kind: "file",
+            type: file.type,
+            getAsFile: () => file,
+          },
+        ],
+        getData: () => "",
+      },
+    });
+
+    fireEvent(screen.getByRole("button", { name: "打开盒子 Brand" }), dropEvent);
+
+    await screen.findByRole("button", { name: "打开盒子 Brand" });
+    expect(onDropToBox).toHaveBeenCalledWith(2, ["C:\\docs\\brief.docx"]);
+    window.brainDesktop = originalApi;
+  });
+
   it("filters current box items by search text and kind", () => {
     render(
       <AppShell
@@ -349,9 +407,7 @@ describe("AppShell", () => {
     fireEvent.change(screen.getByLabelText("筛选当前盒子"), {
       target: { value: "" },
     });
-    fireEvent.change(screen.getByLabelText("筛选卡片类型"), {
-      target: { value: "bundle" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "组合" }));
 
     expect(screen.queryByLabelText("卡片 Moodboard idea")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("卡片 Color reference")).not.toBeInTheDocument();
@@ -450,10 +506,69 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "放大查看 image.png" }));
 
     expect(screen.getByLabelText("工作台图片预览层")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "image.png 预览大图" })).toBeInTheDocument();
+    const previewStage = screen.getByLabelText("滚轮缩放查看图片");
+    expect(previewStage).toHaveAttribute("tabindex", "0");
+    expect(previewStage.querySelector(".image-preview-viewport")).not.toBeNull();
+    const previewImage = screen.getByRole("img", { name: "image.png 预览大图" });
+    expect(previewImage).toBeInTheDocument();
+    const inlineStyle = previewImage.getAttribute("style") ?? "";
+    expect(inlineStyle).toContain("transform: scale(1)");
+    expect(inlineStyle).toContain("transform-origin: 50% 50%");
 
     fireEvent.click(screen.getByRole("button", { name: "关闭图片预览" }));
 
     expect(screen.queryByLabelText("工作台图片预览层")).not.toBeInTheDocument();
+  });
+
+  it("zooms image previews around the cursor on wheel", () => {
+    render(
+      <AppShell
+        onQuickCapture={async () => undefined}
+        snapshot={{
+          boxes: [{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }],
+          items: [
+            {
+              id: 31,
+              boxId: 1,
+              kind: "image",
+              title: "image.png",
+              content: "data:image/png;base64,ZmFrZQ==",
+              sourceUrl: "",
+              sourcePath: "",
+              bundleCount: 0,
+              sortOrder: 0,
+              createdAt: "2026-04-08T00:00:00.000Z",
+              updatedAt: "2026-04-08T00:00:00.000Z",
+            },
+          ],
+          panelState: { selectedBoxId: 1, quickPanelOpen: true },
+        }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开盒子 Inbox" }));
+    fireEvent.click(screen.getByRole("button", { name: "放大查看 image.png" }));
+
+    const previewStage = screen.getByLabelText("滚轮缩放查看图片");
+    const previewImage = screen.getByRole("img", { name: "image.png 预览大图" });
+
+    vi.spyOn(previewStage, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 50,
+      left: 100,
+      top: 50,
+      right: 700,
+      bottom: 450,
+      width: 600,
+      height: 400,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.wheel(previewStage, { deltaY: -120, clientX: 400, clientY: 250 });
+
+    expect(previewImage).toHaveStyle({
+      transformOrigin: "50% 50%",
+      transform: "scale(1.12)",
+    });
   });
 });

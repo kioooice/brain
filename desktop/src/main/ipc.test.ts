@@ -10,6 +10,9 @@ vi.mock("electron", () => ({
     openPath: vi.fn(),
     openExternal: vi.fn(),
   },
+  dialog: {
+    showSaveDialog: vi.fn(),
+  },
   clipboard: {
     writeText: vi.fn(),
   },
@@ -22,7 +25,10 @@ function createStoreDouble() {
   return {
     getWorkbenchSnapshot: vi.fn(),
     setSimpleMode: vi.fn(),
+    setSimpleModeView: vi.fn(),
+    moveFloatingBall: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    setFloatingBallBounds: vi.fn(),
     captureTextOrLink: vi.fn(),
     captureTextOrLinkIntoBox: vi.fn(),
     captureImageData: vi.fn(),
@@ -36,6 +42,7 @@ function createStoreDouble() {
     deleteItem: vi.fn(),
     updateItemTitle: vi.fn(),
     removeBundleEntry: vi.fn(),
+    groupItems: vi.fn(),
     moveItemToBox: vi.fn(),
     moveItemToIndex: vi.fn(),
     reorderItem: vi.fn(),
@@ -76,6 +83,18 @@ describe("registerIpc", () => {
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setSimpleMode, expect.any(Function));
   });
 
+  it("registers the simple mode view handler", () => {
+    registerIpc(createStoreDouble());
+
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setSimpleModeView, expect.any(Function));
+  });
+
+  it("registers the floating ball move handler", () => {
+    registerIpc(createStoreDouble());
+
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.moveFloatingBall, expect.any(Function));
+  });
+
   it("registers the always-on-top handler", () => {
     registerIpc(createStoreDouble());
 
@@ -92,9 +111,11 @@ describe("registerIpc", () => {
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.deleteItem, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.updateItemTitle, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.removeBundleEntry, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.groupItems, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.openPath, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.openExternal, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.copyText, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.exportBundleAi, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.captureImageData, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.captureImageDataIntoBox, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.moveItemToBox, expect.any(Function));

@@ -1,5 +1,7 @@
 import type { Rectangle } from "electron";
 
+export type WindowLaunchBounds = Pick<Rectangle, "width" | "height"> & Partial<Pick<Rectangle, "x" | "y">>;
+
 export const NORMAL_WINDOW_BOUNDS = {
   width: 1440,
   height: 920,
@@ -13,8 +15,19 @@ export const SIMPLE_WINDOW_BOUNDS = {
   minHeight: 420,
 } as const;
 
-export function resolveMainModeBounds(previousMainBounds?: Rectangle): Rectangle {
-  return previousMainBounds ?? NORMAL_WINDOW_BOUNDS;
+export const FLOATING_BALL_BOUNDS = {
+  width: 96,
+  height: 88,
+  margin: 26,
+} as const;
+
+export function resolveMainModeBounds(previousMainBounds?: Rectangle): WindowLaunchBounds {
+  return (
+    previousMainBounds ?? {
+      width: NORMAL_WINDOW_BOUNDS.width,
+      height: NORMAL_WINDOW_BOUNDS.height,
+    }
+  );
 }
 
 export function resolveLastMainWindowBounds(options: {
@@ -53,4 +66,26 @@ export function resolveSimpleModeBounds(workArea: Rectangle): Rectangle {
     width: SIMPLE_WINDOW_BOUNDS.minWidth,
     height: SIMPLE_WINDOW_BOUNDS.minHeight,
   });
+}
+
+export function resolveFloatingBallBounds(
+  workArea: Rectangle,
+  rememberedBounds?: Partial<Rectangle> | null
+): Rectangle {
+  const width = FLOATING_BALL_BOUNDS.width;
+  const height = FLOATING_BALL_BOUNDS.height;
+  const maxX = workArea.x + workArea.width - width;
+  const maxY = workArea.y + workArea.height - height;
+
+  const fallbackX = maxX - FLOATING_BALL_BOUNDS.margin;
+  const fallbackY = maxY - FLOATING_BALL_BOUNDS.margin;
+  const nextX = rememberedBounds?.x ?? fallbackX;
+  const nextY = rememberedBounds?.y ?? fallbackY;
+
+  return {
+    x: Math.max(workArea.x, Math.min(nextX, maxX)),
+    y: Math.max(workArea.y, Math.min(nextY, maxY)),
+    width,
+    height,
+  };
 }

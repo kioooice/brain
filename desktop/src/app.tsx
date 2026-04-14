@@ -18,6 +18,25 @@ function isMissingIpcHandlerError(cause: unknown, channel: string) {
   return cause instanceof Error && cause.message.includes(`No handler registered for '${channel}'`);
 }
 
+function extractClipboardImageFile(clipboardData: DataTransfer | null | undefined) {
+  const item = Array.from(clipboardData?.items ?? []).find(
+    (entry) => entry.kind === "file" && entry.type.startsWith("image/")
+  );
+  return item?.getAsFile() ?? null;
+}
+
+function shouldIgnorePasteTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
+  );
+}
+
 function readBlobAsDataUrl(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -92,7 +111,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!snapshot?.panelState.simpleMode) {
+    if (!snapshot?.panelState.simpleMode || snapshot.panelState.simpleModeView !== "panel") {
       return;
     }
 
@@ -110,6 +129,52 @@ export function App() {
       window.removeEventListener("keydown", handleExitSimpleMode);
     };
   }, [snapshot?.panelState.simpleMode]);
+
+  useEffect(() => {
+    if (!snapshot?.panelState.simpleMode || snapshot.panelState.simpleModeView !== "panel") {
+      return;
+    }
+
+    async function handleSimpleModePaste(event: ClipboardEvent) {
+      if (event.defaultPrevented || shouldIgnorePasteTarget(event.target)) {
+        return;
+      }
+
+      const imageFile = extractClipboardImageFile(event.clipboardData);
+      if (!imageFile) {
+        return;
+      }
+
+      const targetBoxId = snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null;
+      if (!targetBoxId) {
+        return;
+      }
+
+      event.preventDefault();
+      setDropError("");
+
+      try {
+        const dataUrl = await readBlobAsDataUrl(imageFile);
+        const nextSnapshot = await window.brainDesktop.captureImageDataIntoBox(
+          dataUrl,
+          imageFile.name || "粘贴图片",
+          targetBoxId
+        );
+        setSnapshot(nextSnapshot);
+      } catch (cause) {
+        pushToast({
+          message:
+            cause instanceof Error ? cause.message : "图片粘贴失败",
+          tone: "error",
+        });
+      }
+    }
+
+    window.addEventListener("paste", handleSimpleModePaste);
+    return () => {
+      window.removeEventListener("paste", handleSimpleModePaste);
+    };
+  }, [snapshot]);
 
   useEffect(() => {
     pendingDeleteItemsRef.current = pendingDeleteItems;
@@ -192,43 +257,17 @@ export function App() {
   }
 
   async function captureRemoteImageUrlIntoTarget(input: string, boxId?: number) {
-    if (!isHttpUrl(input)) {
+    if (!isHttpUrl(input) || !isImageLikeUrl(input)) {
       return false;
     }
 
-    if (isImageLikeUrl(input)) {
-      const title = deriveImageTitleFromUrl(input);
-      const nextSnapshot =
-        boxId == null
-          ? await window.brainDesktop.captureImageData(input, title)
-          : await window.brainDesktop.captureImageDataIntoBox(input, title, boxId);
-      setSnapshot(nextSnapshot);
-      return true;
-    }
-
-    try {
-      const response = await fetch(input);
-      if (!response.ok) {
-        return false;
-      }
-
-      const blob = await response.blob();
-      if (!blob.type.startsWith("image/")) {
-        return false;
-      }
-
-      const dataUrl = await readBlobAsDataUrl(blob);
-      const title = deriveImageTitleFromUrl(input);
-      const nextSnapshot =
-        boxId == null
-          ? await window.brainDesktop.captureImageData(dataUrl, title)
-          : await window.brainDesktop.captureImageDataIntoBox(dataUrl, title, boxId);
-
-      setSnapshot(nextSnapshot);
-      return true;
-    } catch {
-      return false;
-    }
+    const title = deriveImageTitleFromUrl(input);
+    const nextSnapshot =
+      boxId == null
+        ? await window.brainDesktop.captureImageData(input, title)
+        : await window.brainDesktop.captureImageDataIntoBox(input, title, boxId);
+    setSnapshot(nextSnapshot);
+    return true;
   }
 
   async function captureTextLikeInput(input: string, boxId?: number) {
@@ -320,6 +359,17 @@ export function App() {
   }
 
   async function handleSelectBox(boxId: number) {
+    setSnapshot((current) =>
+      current
+        ? {
+            ...current,
+            panelState: {
+              ...current.panelState,
+              selectedBoxId: boxId,
+            },
+          }
+        : current
+    );
     const nextSnapshot = await window.brainDesktop.selectBox(boxId);
     setSnapshot(nextSnapshot);
   }
@@ -502,6 +552,22 @@ export function App() {
     }
   }
 
+  async function handleExportBundleAi(bundleName: string, html: string) {
+    try {
+      const savedPath = await window.brainDesktop.exportBundleAi(bundleName, html);
+      if (!savedPath) {
+        return;
+      }
+
+      pushToast({ message: `已导出给AI：${savedPath}` });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "导出给AI失败",
+        tone: "error",
+      });
+    }
+  }
+
   async function handleRenameItem(itemId: number, title: string) {
     try {
       const nextSnapshot = await window.brainDesktop.updateItemTitle(itemId, title);
@@ -532,6 +598,19 @@ export function App() {
     } catch (cause) {
       pushToast({
         message: cause instanceof Error ? cause.message : "移除失败",
+        tone: "error",
+      });
+    }
+  }
+
+  async function handleGroupItems(sourceItemId: number, targetItemId: number) {
+    try {
+      const nextSnapshot = await window.brainDesktop.groupItems(sourceItemId, targetItemId);
+      setSnapshot(nextSnapshot);
+      pushToast({ message: "已组合卡片" });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "组合失败",
         tone: "error",
       });
     }
@@ -602,9 +681,12 @@ export function App() {
     await window.brainDesktop.setSimpleMode(true);
   }
 
-  async function handleToggleAlwaysOnTop(enabled: boolean) {
-    const nextSnapshot = await window.brainDesktop.setAlwaysOnTop(enabled);
-    setSnapshot(nextSnapshot);
+  async function handleSetSimpleModeView(view: "ball" | "panel") {
+    await window.brainDesktop.setSimpleModeView(view);
+  }
+
+  async function handleMoveFloatingBall(deltaX: number, deltaY: number) {
+    await window.brainDesktop.moveFloatingBall(deltaX, deltaY);
   }
 
   async function handleLoadBundleEntries(itemId: number) {
@@ -632,7 +714,8 @@ export function App() {
         onQuickCapture={handleQuickCapture}
         onEnterSimpleMode={handleEnterSimpleMode}
         onExitSimpleMode={handleExitSimpleMode}
-        onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+        onSetSimpleModeView={handleSetSimpleModeView}
+        onMoveFloatingBall={handleMoveFloatingBall}
         onSelectBox={handleSelectBox}
         onDropPaths={handleDroppedPaths}
         onDropText={handleQuickCapture}
@@ -651,6 +734,8 @@ export function App() {
         onOpenPath={handleOpenPath}
         onOpenExternal={handleOpenExternal}
         onCopyText={handleCopyText}
+        onExportBundleAi={handleExportBundleAi}
+        onGroupItems={handleGroupItems}
         onMoveItemToBox={handleMoveItemToBox}
         onMoveItemToIndex={handleMoveItemToIndex}
         onLoadBundleEntries={handleLoadBundleEntries}

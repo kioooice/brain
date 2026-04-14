@@ -1,4 +1,5 @@
-import { DragEvent, ReactNode, useEffect, useState } from "react";
+import { DragEvent, ReactNode, useLayoutEffect, useState } from "react";
+import { resolveDroppedFilePaths } from "../dropped-file-paths";
 
 type WorkspaceDropZoneProps = {
   children: ReactNode;
@@ -10,15 +11,8 @@ type WorkspaceDropZoneProps = {
   onPasteImage?: (dataUrl: string, title: string) => void | Promise<void>;
 };
 
-type FileLike = File & {
-  path?: string;
-};
-
 function extractPaths(dataTransfer: DataTransfer | null | undefined) {
-  const files = Array.from(dataTransfer?.files ?? []);
-  return files
-    .map((file) => (file as FileLike).path ?? "")
-    .filter((path) => path.trim().length > 0);
+  return resolveDroppedFilePaths(dataTransfer?.files);
 }
 
 function extractDroppedText(dataTransfer: DataTransfer | null | undefined) {
@@ -43,7 +37,12 @@ function extractImageFile(clipboardData: DataTransfer | null | undefined) {
 }
 
 function hasSupportedDropPayload(dataTransfer: DataTransfer | null | undefined) {
+  const transferTypes = Array.from(dataTransfer?.types ?? []);
   return (
+    transferTypes.includes("Files") ||
+    transferTypes.includes("text/plain") ||
+    transferTypes.includes("text/uri-list") ||
+    transferTypes.includes("text") ||
     extractPaths(dataTransfer).length > 0 ||
     Boolean(extractDroppedText(dataTransfer)) ||
     Boolean(extractImageFile(dataTransfer))
@@ -95,7 +94,7 @@ export function WorkspaceDropZone({
   const [localError, setLocalError] = useState("");
   const displayError = error || localError;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     function handleWindowDragOver(event: globalThis.DragEvent) {
       if (event.defaultPrevented || shouldIgnoreDropTarget(event.target) || !hasSupportedDropPayload(event.dataTransfer)) {
         return;

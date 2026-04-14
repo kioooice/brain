@@ -1,13 +1,19 @@
 import type { BundleEntry, WorkbenchSnapshot } from "../shared/types";
+import { resolveDroppedFilePaths } from "../dropped-file-paths";
 import { BoxRail } from "./box-rail";
 import { MainCanvas } from "./main-canvas";
 import { WorkspaceDropZone } from "./workspace-drop-zone";
-import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-type FileLike = File & {
-  path?: string;
-};
+const FLOATING_BALL_DRAG_THRESHOLD_PX = 6;
+const IMAGE_PREVIEW_MIN_SCALE = 1;
+const IMAGE_PREVIEW_MAX_SCALE = 4;
+const IMAGE_PREVIEW_SCALE_STEP = 0.12;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 function getBoxPreviewKindLabel(kind: string) {
   switch (kind) {
@@ -40,9 +46,7 @@ function tintBoxColor(color: string, alpha: number) {
 }
 
 function extractPaths(files: FileList | File[] | null | undefined) {
-  return Array.from(files ?? [])
-    .map((file) => (file as FileLike).path ?? "")
-    .filter((path) => path.trim().length > 0);
+  return resolveDroppedFilePaths(files);
 }
 
 function extractDroppedText(dataTransfer: DataTransfer | null | undefined) {
@@ -82,12 +86,43 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function FloatingBallIcon() {
+  return (
+    <svg
+      className="simple-mode-ball-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 8.4v7.2" />
+      <path d="M8.4 12h7.2" />
+    </svg>
+  );
+}
+
+function getPointerScreenPosition(event: {
+  screenX: number;
+  screenY: number;
+  clientX: number;
+  clientY: number;
+}) {
+  return {
+    x: event.screenX,
+    y: event.screenY,
+  };
+}
+
 type AppShellProps = {
   snapshot: WorkbenchSnapshot;
   onQuickCapture: (input: string) => Promise<void>;
   onEnterSimpleMode?: () => Promise<void>;
   onExitSimpleMode?: () => Promise<void>;
-  onToggleAlwaysOnTop?: (enabled: boolean) => Promise<void>;
+  onSetSimpleModeView?: (view: "ball" | "panel") => Promise<void>;
+  onMoveFloatingBall?: (deltaX: number, deltaY: number) => Promise<void>;
   onSelectBox?: (boxId: number) => Promise<void>;
   onDropPaths?: (paths: string[]) => Promise<void>;
   onDropText?: (text: string) => Promise<void>;
@@ -106,6 +141,8 @@ type AppShellProps = {
   onOpenPath?: (path: string) => Promise<void>;
   onOpenExternal?: (url: string) => Promise<void>;
   onCopyText?: (text: string) => Promise<void>;
+  onExportBundleAi?: (bundleName: string, html: string) => Promise<void>;
+  onGroupItems?: (sourceItemId: number, targetItemId: number) => Promise<void>;
   onMoveItemToBox?: (itemId: number, boxId: number) => Promise<void>;
   onMoveItemToIndex?: (itemId: number, targetIndex: number) => Promise<void>;
   onLoadBundleEntries?: (itemId: number) => Promise<void>;
@@ -118,7 +155,8 @@ export function AppShell({
   onQuickCapture,
   onEnterSimpleMode = async () => undefined,
   onExitSimpleMode = async () => undefined,
-  onToggleAlwaysOnTop = async () => undefined,
+  onSetSimpleModeView = async () => undefined,
+  onMoveFloatingBall = async () => undefined,
   onSelectBox = async () => undefined,
   onDropPaths = async () => undefined,
   onDropText = async () => undefined,
@@ -137,6 +175,8 @@ export function AppShell({
   onOpenPath = async () => undefined,
   onOpenExternal = async () => undefined,
   onCopyText = async () => undefined,
+  onExportBundleAi = async () => undefined,
+  onGroupItems = async () => undefined,
   onMoveItemToBox = async () => undefined,
   onMoveItemToIndex = async () => undefined,
   onLoadBundleEntries = async () => undefined,
@@ -144,6 +184,8 @@ export function AppShell({
   dropError = "",
 }: AppShellProps) {
   const [previewImageItem, setPreviewImageItem] = useState<WorkbenchSnapshot["items"][number] | null>(null);
+  const [previewImageScale, setPreviewImageScale] = useState(1);
+  const [previewImageOrigin, setPreviewImageOrigin] = useState({ x: "50%", y: "50%" });
   const [activePanel, setActivePanel] = useState<"workspace" | "settings" | "about">("workspace");
   const [selectedBoxId, setSelectedBoxId] = useState<number | null>(
     snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null
@@ -151,7 +193,19 @@ export function AppShell({
   const [workspaceView, setWorkspaceView] = useState<"home" | "box">("home");
   const [creatingBox, setCreatingBox] = useState(false);
   const [newBoxName, setNewBoxName] = useState("");
+  const floatingBallGestureRef = useRef<{
+    active: boolean;
+    dragged: boolean;
+    originX: number;
+    originY: number;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
+  const suppressFloatingBallClickRef = useRef(false);
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewImageRef = useRef<HTMLImageElement | null>(null);
   const simpleMode = Boolean(snapshot.panelState.simpleMode);
+  const simpleModeView = snapshot.panelState.simpleModeView ?? "ball";
   const sortedBoxes = useMemo(
     () =>
       [...snapshot.boxes].sort((left, right) => {
@@ -168,9 +222,20 @@ export function AppShell({
     setSelectedBoxId(snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null);
   }, [snapshot.panelState.selectedBoxId, snapshot.boxes]);
 
+  useEffect(() => {
+    if (!previewImageItem) {
+      setPreviewImageScale(1);
+      setPreviewImageOrigin({ x: "50%", y: "50%" });
+      return;
+    }
+
+    setPreviewImageScale(1);
+    setPreviewImageOrigin({ x: "50%", y: "50%" });
+  }, [previewImageItem?.id]);
+
   const currentBox = snapshot.boxes.find((box) => box.id === selectedBoxId);
   const currentItems = snapshot.items
-    .filter((item) => item.boxId === selectedBoxId)
+    .filter((item) => item.boxId === selectedBoxId && item.bundleParentId == null)
     .sort((left, right) => {
       const sortOrderDelta = (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
       if (sortOrderDelta !== 0) {
@@ -178,6 +243,26 @@ export function AppShell({
       }
       return right.id - left.id;
     });
+  const bundleItemsByItem = useMemo(() => {
+    return snapshot.items
+      .filter((item) => item.boxId === selectedBoxId && item.bundleParentId != null)
+      .sort((left, right) => {
+        const sortOrderDelta = (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+        if (sortOrderDelta !== 0) {
+          return sortOrderDelta;
+        }
+        return left.id - right.id;
+      })
+      .reduce<Record<number, WorkbenchSnapshot["items"]>>((map, item) => {
+        const parentId = item.bundleParentId;
+        if (parentId == null) {
+          return map;
+        }
+
+        map[parentId] = [...(map[parentId] ?? []), item];
+        return map;
+      }, {});
+  }, [selectedBoxId, snapshot.items]);
 
   const boxPreviewById = useMemo(() => {
     return sortedBoxes.reduce<
@@ -245,6 +330,36 @@ export function AppShell({
     if (droppedText) {
       await onDropTextToBox(boxId, droppedText);
     }
+  }
+
+  function handleImagePreviewWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+
+    const hostRect = event.currentTarget.getBoundingClientRect();
+    const imageRect = previewViewportRef.current?.getBoundingClientRect() ?? previewImageRef.current?.getBoundingClientRect();
+    const activeRect =
+      imageRect && imageRect.width > 0 && imageRect.height > 0 ? imageRect : hostRect;
+
+    if (activeRect.width <= 0 || activeRect.height <= 0) {
+      return;
+    }
+
+    const nextOriginX = clamp(((event.clientX - activeRect.left) / activeRect.width) * 100, 0, 100);
+    const nextOriginY = clamp(((event.clientY - activeRect.top) / activeRect.height) * 100, 0, 100);
+    const step = event.deltaY < 0 ? IMAGE_PREVIEW_SCALE_STEP : -IMAGE_PREVIEW_SCALE_STEP;
+
+    setPreviewImageScale((current) => {
+      const nextScale = clamp(
+        Number((current + step).toFixed(2)),
+        IMAGE_PREVIEW_MIN_SCALE,
+        IMAGE_PREVIEW_MAX_SCALE
+      );
+      return nextScale;
+    });
+    setPreviewImageOrigin({
+      x: `${nextOriginX}%`,
+      y: `${nextOriginY}%`,
+    });
   }
 
   const workspaceHomePanel = (
@@ -386,8 +501,11 @@ export function AppShell({
           onOpenPath={onOpenPath}
           onOpenExternal={onOpenExternal}
           onCopyText={onCopyText}
+          onExportBundleAi={onExportBundleAi}
+          onGroupItems={onGroupItems}
           onMoveItemToIndex={onMoveItemToIndex}
           onLoadBundleEntries={onLoadBundleEntries}
+          bundleItemsByItem={bundleItemsByItem}
         />
       </div>
     </WorkspaceDropZone>
@@ -444,6 +562,89 @@ export function AppShell({
     </section>
   );
 
+  function handleFloatingBallPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const origin = getPointerScreenPosition(event);
+
+    floatingBallGestureRef.current = {
+      active: true,
+      dragged: false,
+      originX: origin.x,
+      originY: origin.y,
+      lastX: origin.x,
+      lastY: origin.y,
+    };
+
+    function handlePointerMove(pointerEvent: PointerEvent) {
+      const gesture = floatingBallGestureRef.current;
+      if (!gesture?.active) {
+        return;
+      }
+
+      const nextPosition = getPointerScreenPosition(pointerEvent);
+
+      const totalDeltaX = nextPosition.x - gesture.originX;
+      const totalDeltaY = nextPosition.y - gesture.originY;
+      if (
+        !gesture.dragged &&
+        Math.hypot(totalDeltaX, totalDeltaY) < FLOATING_BALL_DRAG_THRESHOLD_PX
+      ) {
+        return;
+      }
+
+      const deltaX = nextPosition.x - gesture.lastX;
+      const deltaY = nextPosition.y - gesture.lastY;
+      if (deltaX === 0 && deltaY === 0) {
+        return;
+      }
+
+      gesture.dragged = true;
+      gesture.lastX = nextPosition.x;
+      gesture.lastY = nextPosition.y;
+      suppressFloatingBallClickRef.current = true;
+      void onMoveFloatingBall(deltaX, deltaY);
+    }
+
+    function handlePointerUp() {
+      floatingBallGestureRef.current = null;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  }
+
+  if (simpleMode && simpleModeView === "ball") {
+    return (
+      <div className="app-shell simple-mode simple-mode-ball-view">
+        <div className="simple-mode-floating-ball-shell" data-testid="simple-mode-floating-ball-shell">
+          <button
+            type="button"
+            className="simple-mode-floating-ball"
+            data-testid="simple-mode-floating-ball"
+            aria-label="Open simple mode panel"
+            onPointerDown={handleFloatingBallPointerDown}
+            onClick={() => {
+              if (suppressFloatingBallClickRef.current) {
+                suppressFloatingBallClickRef.current = false;
+                return;
+              }
+              void onSetSimpleModeView("panel");
+            }}
+          >
+            <FloatingBallIcon />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={simpleMode ? "app-shell simple-mode" : "app-shell"}>
       {simpleMode ? <div className="simple-mode-drag-strip" aria-hidden="true" /> : null}
@@ -453,12 +654,11 @@ export function AppShell({
         selectedBoxId={selectedBoxId}
         activePanel={activePanel}
         simpleMode={simpleMode}
-        alwaysOnTop={Boolean(snapshot.panelState.alwaysOnTop)}
         onDeleteItem={onDeleteItem}
         onDeleteBox={onDeleteBox}
         onEnterSimpleMode={onEnterSimpleMode}
         onExitSimpleMode={onExitSimpleMode}
-        onToggleAlwaysOnTop={onToggleAlwaysOnTop}
+        onCollapseSimpleMode={() => void onSetSimpleModeView("ball")}
         onSelectPanel={(panel) => {
           setActivePanel(panel);
           if (panel === "workspace") {
@@ -491,11 +691,25 @@ export function AppShell({
                 关闭
               </button>
             </div>
-            <img
-              className="image-preview-full"
-              src={previewImageItem.content}
-              alt={`${previewImageItem.title} 预览大图`}
-            />
+            <div
+              className="workbench-image-preview-stage"
+              aria-label="滚轮缩放查看图片"
+              tabIndex={0}
+              onWheel={handleImagePreviewWheel}
+            >
+              <div className="image-preview-viewport" ref={previewViewportRef}>
+                <img
+                  ref={previewImageRef}
+                  className="image-preview-full"
+                  src={previewImageItem.content}
+                  alt={`${previewImageItem.title} 预览大图`}
+                  style={{
+                    transform: `scale(${previewImageScale})`,
+                    transformOrigin: `${previewImageOrigin.x} ${previewImageOrigin.y}`,
+                  }}
+                />
+              </div>
+            </div>
           </section>
         </div>
       ) : null}

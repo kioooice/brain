@@ -9,3 +9,20 @@ script = ""
 name = "运行"
 icon = "run"
 command = "Set-Location D:\\02-Projects\\brain\\desktop; npm start"
+platform = "win32"
+
+[[actions]]
+name = "安装包"
+icon = "run"
+command = '''
+Set-Location -LiteralPath 'D:\02-Projects\brain\desktop'
+npm run make
+'''
+
+[[actions]]
+name = "免安装"
+icon = "run"
+command = '''
+Set-Location -LiteralPath 'D:\02-Projects\brain\desktop'
+npm run package
+'''

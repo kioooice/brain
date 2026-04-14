@@ -2,12 +2,14 @@ import Database from "better-sqlite3";
 import * as fs from "node:fs";
 import { basename, extname } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Box, BundleEntry, Item, WorkbenchSnapshot } from "../shared/types";
+import type { Box, BundleEntry, Item, SimpleModeView, WindowBounds, WorkbenchSnapshot } from "../shared/types";
 
 export type DesktopStore = {
   getWorkbenchSnapshot: () => WorkbenchSnapshot;
   setSimpleMode: (enabled: boolean) => WorkbenchSnapshot;
+  setSimpleModeView: (view: SimpleModeView) => WorkbenchSnapshot;
   setAlwaysOnTop: (enabled: boolean) => WorkbenchSnapshot;
+  setFloatingBallBounds: (bounds: WindowBounds) => WorkbenchSnapshot;
   captureTextOrLink: (input: string) => WorkbenchSnapshot;
   captureTextOrLinkIntoBox: (input: string, boxId: number) => WorkbenchSnapshot;
   captureImageData: (dataUrl: string, title?: string) => WorkbenchSnapshot;
@@ -21,6 +23,7 @@ export type DesktopStore = {
   deleteItem: (itemId: number) => WorkbenchSnapshot;
   updateItemTitle: (itemId: number, title: string) => WorkbenchSnapshot | null;
   removeBundleEntry: (bundleItemId: number, entryPath: string) => WorkbenchSnapshot;
+  groupItems: (sourceItemId: number, targetItemId: number) => WorkbenchSnapshot;
   moveItemToBox: (itemId: number, boxId: number) => WorkbenchSnapshot;
   moveItemToIndex: (itemId: number, targetIndex: number) => WorkbenchSnapshot;
   reorderItem: (itemId: number, direction: "up" | "down") => WorkbenchSnapshot;
@@ -44,6 +47,7 @@ export function createStore(filename: string): DesktopStore {
     create table if not exists items (
       id integer primary key autoincrement,
       box_id integer not null,
+      bundle_parent_item_id integer,
       kind text not null,
       title text not null,
       content text not null default '',
@@ -65,7 +69,12 @@ export function createStore(filename: string): DesktopStore {
       selected_box_id integer,
       quick_panel_open integer not null default 1,
       simple_mode integer not null default 0,
-      always_on_top integer not null default 0
+      always_on_top integer not null default 0,
+      simple_mode_view text not null default 'ball',
+      floating_ball_x integer,
+      floating_ball_y integer,
+      floating_ball_width integer,
+      floating_ball_height integer
     );
   `);
   for (const statement of [
@@ -74,8 +83,14 @@ export function createStore(filename: string): DesktopStore {
     "alter table items add column sort_order integer not null default 0",
     "alter table items add column created_at text not null default ''",
     "alter table items add column updated_at text not null default ''",
+    "alter table items add column bundle_parent_item_id integer",
     "alter table panel_state add column simple_mode integer not null default 0",
     "alter table panel_state add column always_on_top integer not null default 0",
+    "alter table panel_state add column simple_mode_view text not null default 'ball'",
+    "alter table panel_state add column floating_ball_x integer",
+    "alter table panel_state add column floating_ball_y integer",
+    "alter table panel_state add column floating_ball_width integer",
+    "alter table panel_state add column floating_ball_height integer",
   ]) {
     try {
       db.exec(statement);
@@ -90,7 +105,7 @@ export function createStore(filename: string): DesktopStore {
       .prepare("insert into boxes (name, color, description, sort_order) values (?, ?, ?, ?)")
       .run("收件箱", "#f97316", "默认收集盒子", 0);
     db.prepare(
-      "insert or replace into panel_state (id, selected_box_id, quick_panel_open, simple_mode, always_on_top) values (1, ?, 1, 0, 0)"
+      "insert or replace into panel_state (id, selected_box_id, quick_panel_open, simple_mode, always_on_top, simple_mode_view, floating_ball_x, floating_ball_y, floating_ball_width, floating_ball_height) values (1, ?, 1, 0, 0, 'ball', null, null, null, null)"
     ).run(Number(info.lastInsertRowid));
   }
 
@@ -135,17 +150,38 @@ export function createStore(filename: string): DesktopStore {
         "select id, name, color, description, sort_order as sortOrder from boxes order by sort_order asc"
       )
       .all() as Box[];
-    const items = db
+    const rawItems = db
       .prepare(
-        "select items.id, items.box_id as boxId, items.kind, items.title, items.content, items.source_url as sourceUrl, items.source_path as sourcePath, coalesce(bundle_counts.bundleCount, 0) as bundleCount, items.sort_order as sortOrder, items.created_at as createdAt, items.updated_at as updatedAt from items left join (select bundle_item_id, count(*) as bundleCount from bundle_entries group by bundle_item_id) bundle_counts on bundle_counts.bundle_item_id = items.id order by items.box_id asc, items.sort_order asc, items.id desc"
+        "select items.id, items.box_id as boxId, items.bundle_parent_item_id as bundleParentId, items.kind, items.title, items.content, items.source_url as sourceUrl, items.source_path as sourcePath, coalesce(bundle_entry_counts.bundleEntryCount, 0) as bundleEntryCount, items.sort_order as sortOrder, items.created_at as createdAt, items.updated_at as updatedAt from items left join (select bundle_item_id, count(*) as bundleEntryCount from bundle_entries group by bundle_item_id) bundle_entry_counts on bundle_entry_counts.bundle_item_id = items.id order by items.box_id asc, coalesce(items.bundle_parent_item_id, items.id) asc, items.sort_order asc, items.id desc"
       )
-      .all() as Item[];
+      .all() as Array<Item & { bundleParentId: number | null; bundleEntryCount: number }>;
+    const bundleChildCounts = rawItems.reduce<Record<number, number>>((counts, item) => {
+      if (item.bundleParentId != null) {
+        counts[item.bundleParentId] = (counts[item.bundleParentId] ?? 0) + 1;
+      }
+      return counts;
+    }, {});
+    const items = rawItems.map(({ bundleEntryCount, ...item }) => ({
+      ...item,
+      bundleParentId: item.bundleParentId ?? null,
+      bundleCount: bundleEntryCount + (bundleChildCounts[item.id] ?? 0),
+    })) as Item[];
     const panelStateRow = db
       .prepare(
-        "select selected_box_id as selectedBoxId, quick_panel_open as quickPanelOpen, simple_mode as simpleMode, always_on_top as alwaysOnTop from panel_state where id = 1"
+        "select selected_box_id as selectedBoxId, quick_panel_open as quickPanelOpen, simple_mode as simpleMode, always_on_top as alwaysOnTop, simple_mode_view as simpleModeView, floating_ball_x as floatingBallX, floating_ball_y as floatingBallY, floating_ball_width as floatingBallWidth, floating_ball_height as floatingBallHeight from panel_state where id = 1"
       )
       .get() as
-      | { selectedBoxId: number | null; quickPanelOpen: number; simpleMode: number; alwaysOnTop: number }
+      | {
+          selectedBoxId: number | null;
+          quickPanelOpen: number;
+          simpleMode: number;
+          alwaysOnTop: number;
+          simpleModeView: string | null;
+          floatingBallX: number | null;
+          floatingBallY: number | null;
+          floatingBallWidth: number | null;
+          floatingBallHeight: number | null;
+        }
       | undefined;
 
     return {
@@ -157,8 +193,29 @@ export function createStore(filename: string): DesktopStore {
             quickPanelOpen: Boolean(panelStateRow.quickPanelOpen),
             simpleMode: Boolean(panelStateRow.simpleMode),
             alwaysOnTop: Boolean(panelStateRow.alwaysOnTop),
+            simpleModeView:
+              panelStateRow.simpleModeView === "panel" ? "panel" : "ball",
+            floatingBallBounds:
+              panelStateRow.floatingBallX == null ||
+              panelStateRow.floatingBallY == null ||
+              panelStateRow.floatingBallWidth == null ||
+              panelStateRow.floatingBallHeight == null
+                ? null
+                : {
+                    x: panelStateRow.floatingBallX,
+                    y: panelStateRow.floatingBallY,
+                    width: panelStateRow.floatingBallWidth,
+                    height: panelStateRow.floatingBallHeight,
+                  },
           }
-        : { selectedBoxId: boxes[0]?.id ?? null, quickPanelOpen: true, simpleMode: false, alwaysOnTop: false },
+        : {
+            selectedBoxId: boxes[0]?.id ?? null,
+            quickPanelOpen: true,
+            simpleMode: false,
+            alwaysOnTop: false,
+            simpleModeView: "ball",
+            floatingBallBounds: null,
+          },
     };
   }
 
@@ -166,12 +223,35 @@ export function createStore(filename: string): DesktopStore {
     selectedBoxId: number | null,
     quickPanelOpen: boolean,
     simpleMode: boolean,
-    alwaysOnTop: boolean
+    alwaysOnTop: boolean,
+    simpleModeView: SimpleModeView,
+    floatingBallBounds: WindowBounds | null
   ) {
     db.prepare(`
-      insert or replace into panel_state (id, selected_box_id, quick_panel_open, simple_mode, always_on_top)
-      values (1, ?, ?, ?, ?)
-    `).run(selectedBoxId, quickPanelOpen ? 1 : 0, simpleMode ? 1 : 0, alwaysOnTop ? 1 : 0);
+      insert or replace into panel_state (id, selected_box_id, quick_panel_open, simple_mode, always_on_top, simple_mode_view, floating_ball_x, floating_ball_y, floating_ball_width, floating_ball_height)
+      values (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      selectedBoxId,
+      quickPanelOpen ? 1 : 0,
+      simpleMode ? 1 : 0,
+      alwaysOnTop ? 1 : 0,
+      simpleModeView,
+      floatingBallBounds?.x ?? null,
+      floatingBallBounds?.y ?? null,
+      floatingBallBounds?.width ?? null,
+      floatingBallBounds?.height ?? null
+    );
+  }
+
+  function getPanelStateDefaults(snapshot = readWorkbenchSnapshot()): PanelStateDefaults {
+    return {
+      selectedBoxId: snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null,
+      quickPanelOpen: snapshot.panelState.quickPanelOpen,
+      simpleMode: Boolean(snapshot.panelState.simpleMode),
+      alwaysOnTop: Boolean(snapshot.panelState.alwaysOnTop),
+      simpleModeView: snapshot.panelState.simpleModeView === "panel" ? "panel" : "ball",
+      floatingBallBounds: snapshot.panelState.floatingBallBounds ?? null,
+    };
   }
 
   function getTargetBoxId() {
@@ -187,7 +267,7 @@ export function createStore(filename: string): DesktopStore {
 
   function getNextBottomSortOrder(boxId: number) {
     const row = db
-      .prepare("select max(sort_order) as sortOrder from items where box_id = ?")
+      .prepare("select max(sort_order) as sortOrder from items where box_id = ? and bundle_parent_item_id is null")
       .get(boxId) as { sortOrder: number | null } | undefined;
     return (row?.sortOrder ?? -1) + 1;
   }
@@ -199,7 +279,7 @@ export function createStore(filename: string): DesktopStore {
 
   function getNextTopSortOrder(boxId: number) {
     const row = db
-      .prepare("select min(sort_order) as sortOrder from items where box_id = ?")
+      .prepare("select min(sort_order) as sortOrder from items where box_id = ? and bundle_parent_item_id is null")
       .get(boxId) as { sortOrder: number | null } | undefined;
     return (row?.sortOrder ?? 1) - 1;
   }
@@ -207,9 +287,46 @@ export function createStore(filename: string): DesktopStore {
   function listItemsInBox(boxId: number) {
     return db
       .prepare(
-        "select id, box_id as boxId, sort_order as sortOrder from items where box_id = ? order by sort_order asc, id desc"
+        "select id, box_id as boxId, sort_order as sortOrder from items where box_id = ? and bundle_parent_item_id is null order by sort_order asc, id desc"
       )
       .all(boxId) as Array<{ id: number; boxId: number; sortOrder: number }>;
+  }
+
+  function getNextBundleMemberSortOrder(bundleItemId: number) {
+    const row = db
+      .prepare("select max(sort_order) as sortOrder from items where bundle_parent_item_id = ?")
+      .get(bundleItemId) as { sortOrder: number | null } | undefined;
+    return (row?.sortOrder ?? -1) + 1;
+  }
+
+  function dissolveBundleIfNeeded(bundleItemId: number) {
+    const snapshot = readWorkbenchSnapshot();
+    const bundleItem = snapshot.items.find((entry) => entry.id === bundleItemId && entry.kind === "bundle");
+    if (!bundleItem) {
+      return snapshot;
+    }
+
+    const memberItems = snapshot.items
+      .filter((entry) => entry.bundleParentId === bundleItemId)
+      .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
+
+    if (memberItems.length > 1) {
+      return snapshot;
+    }
+
+    const timestamp = nowIso();
+    if (memberItems.length === 1) {
+      db.prepare(`
+        update items
+        set bundle_parent_item_id = ?, sort_order = ?, updated_at = ?
+        where id = ?
+      `).run(null, bundleItem.sortOrder, timestamp, memberItems[0].id);
+    }
+
+    db.prepare("delete from bundle_entries where bundle_item_id = ?").run(bundleItemId);
+    db.prepare("delete from items where id = ?").run(bundleItemId);
+    normalizeItemSortOrders(bundleItem.boxId);
+    return readWorkbenchSnapshot();
   }
 
   function normalizeItemSortOrders(boxId: number) {
@@ -364,22 +481,50 @@ export function createStore(filename: string): DesktopStore {
   return {
     getWorkbenchSnapshot: readWorkbenchSnapshot,
     setSimpleMode(enabled: boolean): WorkbenchSnapshot {
-      const snapshot = readWorkbenchSnapshot();
+      const panelState = getPanelStateDefaults();
       writePanelState(
-        snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null,
-        snapshot.panelState.quickPanelOpen,
+        panelState.selectedBoxId,
+        panelState.quickPanelOpen,
         enabled,
-        Boolean(snapshot.panelState.alwaysOnTop)
+        panelState.alwaysOnTop,
+        "ball",
+        panelState.floatingBallBounds
+      );
+      return readWorkbenchSnapshot();
+    },
+    setSimpleModeView(view: SimpleModeView): WorkbenchSnapshot {
+      const panelState = getPanelStateDefaults();
+      writePanelState(
+        panelState.selectedBoxId,
+        panelState.quickPanelOpen,
+        panelState.simpleMode,
+        panelState.alwaysOnTop,
+        view,
+        panelState.floatingBallBounds
       );
       return readWorkbenchSnapshot();
     },
     setAlwaysOnTop(enabled: boolean): WorkbenchSnapshot {
-      const snapshot = readWorkbenchSnapshot();
+      const panelState = getPanelStateDefaults();
       writePanelState(
-        snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null,
-        snapshot.panelState.quickPanelOpen,
-        Boolean(snapshot.panelState.simpleMode),
-        enabled
+        panelState.selectedBoxId,
+        panelState.quickPanelOpen,
+        panelState.simpleMode,
+        enabled,
+        panelState.simpleModeView,
+        panelState.floatingBallBounds
+      );
+      return readWorkbenchSnapshot();
+    },
+    setFloatingBallBounds(bounds: WindowBounds): WorkbenchSnapshot {
+      const panelState = getPanelStateDefaults();
+      writePanelState(
+        panelState.selectedBoxId,
+        panelState.quickPanelOpen,
+        panelState.simpleMode,
+        panelState.alwaysOnTop,
+        panelState.simpleModeView,
+        bounds
       );
       return readWorkbenchSnapshot();
     },
@@ -411,13 +556,15 @@ export function createStore(filename: string): DesktopStore {
         .prepare("insert into boxes (name, color, description, sort_order) values (?, ?, ?, ?)")
         .run(trimmed, nextBoxColor(), "", getNextBoxSortOrder()) as { lastInsertRowid: number | bigint };
       const boxId = Number(result.lastInsertRowid);
-      const snapshot = readWorkbenchSnapshot();
+      const panelState = getPanelStateDefaults();
 
       writePanelState(
         boxId,
-        snapshot.panelState.quickPanelOpen,
-        Boolean(snapshot.panelState.simpleMode),
-        Boolean(snapshot.panelState.alwaysOnTop)
+        panelState.quickPanelOpen,
+        panelState.simpleMode,
+        panelState.alwaysOnTop,
+        panelState.simpleModeView,
+        panelState.floatingBallBounds
       );
 
       return readWorkbenchSnapshot();
@@ -491,16 +638,30 @@ export function createStore(filename: string): DesktopStore {
 
       const nextSelectedBoxId =
         snapshot.panelState.selectedBoxId === boxId ? fallbackBox.id : snapshot.panelState.selectedBoxId;
+      const panelState = getPanelStateDefaults(snapshot);
       writePanelState(
         nextSelectedBoxId,
-        snapshot.panelState.quickPanelOpen,
-        Boolean(snapshot.panelState.simpleMode),
-        Boolean(snapshot.panelState.alwaysOnTop)
+        panelState.quickPanelOpen,
+        panelState.simpleMode,
+        panelState.alwaysOnTop,
+        panelState.simpleModeView,
+        panelState.floatingBallBounds
       );
 
       return readWorkbenchSnapshot();
     },
     deleteItem(itemId: number): WorkbenchSnapshot {
+      const snapshot = readWorkbenchSnapshot();
+      const item = snapshot.items.find((entry) => entry.id === itemId);
+      if (!item) {
+        return snapshot;
+      }
+
+      const childItemIds = snapshot.items
+        .filter((entry) => entry.bundleParentId === itemId)
+        .map((entry) => entry.id);
+      const deleteItemStatement = db.prepare("delete from items where id = ?");
+
       const exists = db
         .prepare("select id from items where id = ?")
         .get(itemId) as { id: number } | undefined;
@@ -509,7 +670,11 @@ export function createStore(filename: string): DesktopStore {
       }
 
       db.prepare("delete from bundle_entries where bundle_item_id = ?").run(itemId);
-      db.prepare("delete from items where id = ?").run(itemId);
+      childItemIds.forEach((childItemId) => {
+        db.prepare("delete from bundle_entries where bundle_item_id = ?").run(childItemId);
+        deleteItemStatement.run(childItemId);
+      });
+      deleteItemStatement.run(itemId);
 
       return readWorkbenchSnapshot();
     },
@@ -540,6 +705,71 @@ export function createStore(filename: string): DesktopStore {
 
       return readWorkbenchSnapshot();
     },
+    groupItems(sourceItemId: number, targetItemId: number): WorkbenchSnapshot {
+      const snapshot = readWorkbenchSnapshot();
+      if (sourceItemId === targetItemId) {
+        return snapshot;
+      }
+
+      const sourceItem = snapshot.items.find((entry) => entry.id === sourceItemId);
+      const targetItem = snapshot.items.find((entry) => entry.id === targetItemId);
+      if (!sourceItem || !targetItem) {
+        return snapshot;
+      }
+
+      if (sourceItem.boxId !== targetItem.boxId) {
+        return snapshot;
+      }
+
+      if (targetItem.bundleParentId != null) {
+        return snapshot;
+      }
+
+      if (sourceItem.kind === "bundle") {
+        return snapshot;
+      }
+
+      const timestamp = nowIso();
+      const assignBundleParent = db.prepare(`
+        update items
+        set bundle_parent_item_id = ?, sort_order = ?, updated_at = ?
+        where id = ?
+      `);
+
+      if (targetItem.kind === "bundle") {
+        if (sourceItem.bundleParentId === targetItem.id) {
+          return snapshot;
+        }
+
+        assignBundleParent.run(targetItem.id, getNextBundleMemberSortOrder(targetItem.id), timestamp, sourceItem.id);
+        return sourceItem.bundleParentId != null ? dissolveBundleIfNeeded(sourceItem.bundleParentId) : readWorkbenchSnapshot();
+      }
+
+      if (sourceItem.bundleParentId != null) {
+        return snapshot;
+      }
+
+      const bundleResult = db.prepare(`
+        insert into items (box_id, kind, title, content, source_url, source_path, sort_order, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        targetItem.boxId,
+        "bundle",
+        "",
+        "",
+        targetItem.sourceUrl,
+        targetItem.sourcePath,
+        targetItem.sortOrder,
+        timestamp,
+        timestamp
+      ) as { lastInsertRowid: number | bigint };
+
+      const bundleItemId = Number(bundleResult.lastInsertRowid);
+      assignBundleParent.run(bundleItemId, 0, timestamp, targetItem.id);
+      assignBundleParent.run(bundleItemId, 1, timestamp, sourceItem.id);
+
+      return readWorkbenchSnapshot();
+    },
     moveItemToBox(itemId: number, boxId: number): WorkbenchSnapshot {
       const snapshot = readWorkbenchSnapshot();
       if (!snapshot.boxes.some((box) => box.id === boxId)) {
@@ -557,6 +787,14 @@ export function createStore(filename: string): DesktopStore {
         where id = ?
       `).run(boxId, getNextTopSortOrder(boxId), nowIso(), itemId);
 
+      if (item.kind === "bundle") {
+        db.prepare(`
+          update items
+          set box_id = ?, updated_at = ?
+          where bundle_parent_item_id = ?
+        `).run(boxId, nowIso(), itemId);
+      }
+
       return readWorkbenchSnapshot();
     },
     moveItemToIndex(itemId: number, targetIndex: number): WorkbenchSnapshot {
@@ -564,6 +802,31 @@ export function createStore(filename: string): DesktopStore {
       const item = snapshot.items.find((entry) => entry.id === itemId);
       if (!item) {
         return snapshot;
+      }
+
+      if (item.bundleParentId != null) {
+        const topLevelItems = normalizeItemSortOrders(item.boxId);
+        const boundedIndex = Math.max(0, Math.min(targetIndex, topLevelItems.length));
+        const nextItems = topLevelItems.slice();
+        nextItems.splice(boundedIndex, 0, { id: item.id, boxId: item.boxId, sortOrder: boundedIndex });
+
+        const timestamp = nowIso();
+        const updateTopLevelItem = db.prepare(`
+          update items
+          set bundle_parent_item_id = ?, sort_order = ?, updated_at = ?
+          where id = ?
+        `);
+
+        nextItems.forEach((entry, index) => {
+          if (entry.id === item.id) {
+            updateTopLevelItem.run(null, index, timestamp, entry.id);
+            return;
+          }
+
+          db.prepare("update items set sort_order = ?, updated_at = ? where id = ?").run(index, timestamp, entry.id);
+        });
+
+        return dissolveBundleIfNeeded(item.bundleParentId);
       }
 
       const items = normalizeItemSortOrders(item.boxId);
@@ -623,11 +886,14 @@ export function createStore(filename: string): DesktopStore {
         return snapshot;
       }
 
+      const panelState = getPanelStateDefaults(snapshot);
       writePanelState(
         boxId,
-        snapshot.panelState.quickPanelOpen,
-        Boolean(snapshot.panelState.simpleMode),
-        Boolean(snapshot.panelState.alwaysOnTop)
+        panelState.quickPanelOpen,
+        panelState.simpleMode,
+        panelState.alwaysOnTop,
+        panelState.simpleModeView,
+        panelState.floatingBallBounds
       );
 
       return readWorkbenchSnapshot();
@@ -661,3 +927,11 @@ export function createStore(filename: string): DesktopStore {
     },
   };
 }
+  type PanelStateDefaults = {
+    selectedBoxId: number | null;
+    quickPanelOpen: boolean;
+    simpleMode: boolean;
+    alwaysOnTop: boolean;
+    simpleModeView: SimpleModeView;
+    floatingBallBounds: WindowBounds | null;
+  };

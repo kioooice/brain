@@ -15,6 +15,7 @@ type BoxRow = {
 type ItemRow = {
   id: number;
   box_id: number;
+  bundle_parent_item_id: number | null;
   kind: string;
   title: string;
   content: string;
@@ -38,6 +39,11 @@ type PanelStateRow = {
   quick_panel_open: number;
   simple_mode: number;
   always_on_top: number;
+  simple_mode_view: "ball" | "panel";
+  floating_ball_x: number | null;
+  floating_ball_y: number | null;
+  floating_ball_width: number | null;
+  floating_ball_height: number | null;
 };
 
 class FakeDatabase {
@@ -79,12 +85,27 @@ class FakeDatabase {
 
     if (sql.includes("insert or replace into panel_state")) {
       return {
-        run: (selectedBoxId: number, quickPanelOpen = 1, simpleMode = 0, alwaysOnTop = 0) => {
+        run: (
+          selectedBoxId: number,
+          quickPanelOpen = 1,
+          simpleMode = 0,
+          alwaysOnTop = 0,
+          simpleModeView: "ball" | "panel" = "ball",
+          floatingBallX: number | null = null,
+          floatingBallY: number | null = null,
+          floatingBallWidth: number | null = null,
+          floatingBallHeight: number | null = null
+        ) => {
           this.panelState = {
             selected_box_id: selectedBoxId,
             quick_panel_open: quickPanelOpen,
             simple_mode: simpleMode,
             always_on_top: alwaysOnTop,
+            simple_mode_view: simpleModeView,
+            floating_ball_x: floatingBallX,
+            floating_ball_y: floatingBallY,
+            floating_ball_width: floatingBallWidth,
+            floating_ball_height: floatingBallHeight,
           };
           return {};
         },
@@ -100,6 +121,11 @@ class FakeDatabase {
               quick_panel_open: 1,
               simple_mode: simpleMode,
               always_on_top: alwaysOnTop,
+              simple_mode_view: "ball",
+              floating_ball_x: null,
+              floating_ball_y: null,
+              floating_ball_width: null,
+              floating_ball_height: null,
             };
           } else {
             this.panelState.simple_mode = simpleMode;
@@ -119,6 +145,11 @@ class FakeDatabase {
               quick_panel_open: 1,
               simple_mode: simpleMode,
               always_on_top: 0,
+              simple_mode_view: "ball",
+              floating_ball_x: null,
+              floating_ball_y: null,
+              floating_ball_width: null,
+              floating_ball_height: null,
             };
           } else {
             this.panelState.simple_mode = simpleMode;
@@ -164,7 +195,7 @@ class FakeDatabase {
     if (sql.includes("select min(sort_order) as sortOrder from items where box_id = ?")) {
       return {
         get: (boxId: number) => {
-          const matches = this.items.filter((item) => item.box_id === boxId);
+          const matches = this.items.filter((item) => item.box_id === boxId && item.bundle_parent_item_id == null);
           return {
             sortOrder: matches.length
               ? Math.min(...matches.map((item) => item.sort_order))
@@ -177,7 +208,20 @@ class FakeDatabase {
     if (sql.includes("select max(sort_order) as sortOrder from items where box_id = ?")) {
       return {
         get: (boxId: number) => {
-          const matches = this.items.filter((item) => item.box_id === boxId);
+          const matches = this.items.filter((item) => item.box_id === boxId && item.bundle_parent_item_id == null);
+          return {
+            sortOrder: matches.length
+              ? Math.max(...matches.map((item) => item.sort_order))
+              : null,
+          };
+        },
+      };
+    }
+
+    if (sql.includes("select max(sort_order) as sortOrder from items where bundle_parent_item_id = ?")) {
+      return {
+        get: (bundleItemId: number) => {
+          const matches = this.items.filter((item) => item.bundle_parent_item_id === bundleItemId);
           return {
             sortOrder: matches.length
               ? Math.max(...matches.map((item) => item.sort_order))
@@ -191,7 +235,7 @@ class FakeDatabase {
       return {
         all: (boxId: number) =>
           this.items
-            .filter((item) => item.box_id === boxId)
+            .filter((item) => item.box_id === boxId && item.bundle_parent_item_id == null)
             .slice()
             .sort((left, right) => left.sort_order - right.sort_order || right.id - left.id)
             .map((item) => ({
@@ -237,6 +281,7 @@ class FakeDatabase {
           this.items.push({
             id,
             box_id: boxId,
+            bundle_parent_item_id: null,
             kind,
             title,
             content,
@@ -267,6 +312,21 @@ class FakeDatabase {
       };
     }
 
+    if (sql.includes("set bundle_parent_item_id = ?, sort_order = ?, updated_at = ?")) {
+      return {
+        run: (bundleParentItemId: number, sortOrder: number, updatedAt: string, itemId: number) => {
+          const item = this.items.find((entry) => entry.id === itemId);
+          if (!item) {
+            return { changes: 0 };
+          }
+          item.bundle_parent_item_id = bundleParentItemId;
+          item.sort_order = sortOrder;
+          item.updated_at = updatedAt;
+          return { changes: 1 };
+        },
+      };
+    }
+
     if (sql.includes("set box_id = ?, sort_order = ?, updated_at = ?")) {
       return {
         run: (boxId: number, sortOrder: number, updatedAt: string, itemId: number) => {
@@ -277,6 +337,20 @@ class FakeDatabase {
           item.box_id = boxId;
           item.sort_order = sortOrder;
           item.updated_at = updatedAt;
+          return { changes: 1 };
+        },
+      };
+    }
+
+    if (sql.includes("set box_id = ?, updated_at = ?") && sql.includes("where bundle_parent_item_id = ?")) {
+      return {
+        run: (boxId: number, updatedAt: string, bundleParentItemId: number) => {
+          this.items.forEach((item) => {
+            if (item.bundle_parent_item_id === bundleParentItemId) {
+              item.box_id = boxId;
+              item.updated_at = updatedAt;
+            }
+          });
           return { changes: 1 };
         },
       };
@@ -386,14 +460,14 @@ class FakeDatabase {
             .map((item) => ({
               id: item.id,
               boxId: item.box_id,
+              bundleParentId: item.bundle_parent_item_id,
               kind: item.kind,
               title: item.title,
               content: item.content,
               sourceUrl: item.source_url,
               sourcePath: item.source_path,
               sortOrder: item.sort_order,
-              bundleCount: this.bundleEntries.filter((entry) => entry.bundle_item_id === item.id)
-                .length,
+              bundleEntryCount: this.bundleEntries.filter((entry) => entry.bundle_item_id === item.id).length,
               createdAt: item.created_at,
               updatedAt: item.updated_at,
             })),
@@ -425,6 +499,19 @@ class FakeDatabase {
                 quickPanelOpen: this.panelState.quick_panel_open,
                 simpleMode: this.panelState.simple_mode,
                 alwaysOnTop: this.panelState.always_on_top,
+                simpleModeView: this.panelState.simple_mode_view,
+                floatingBallBounds:
+                  this.panelState.floating_ball_x == null ||
+                  this.panelState.floating_ball_y == null ||
+                  this.panelState.floating_ball_width == null ||
+                  this.panelState.floating_ball_height == null
+                    ? null
+                    : {
+                        x: this.panelState.floating_ball_x,
+                        y: this.panelState.floating_ball_y,
+                        width: this.panelState.floating_ball_width,
+                        height: this.panelState.floating_ball_height,
+                      },
               }
             : undefined,
       };
@@ -490,7 +577,19 @@ describe("createStore", () => {
     const updated = store.setSimpleMode(true);
 
     expect(updated.panelState.simpleMode).toBe(true);
+    expect(updated.panelState.simpleModeView).toBe("ball");
     expect(store.getWorkbenchSnapshot().panelState.simpleMode).toBe(true);
+  });
+
+  it("resets simple mode view back to ball when leaving simple mode", () => {
+    const store = createStore("brain-desktop.db");
+
+    store.setSimpleMode(true);
+    store.setSimpleModeView("panel");
+    const updated = store.setSimpleMode(false);
+
+    expect(updated.panelState.simpleMode).toBe(false);
+    expect(updated.panelState.simpleModeView).toBe("ball");
   });
 
   it("persists always-on-top in panel state", () => {
@@ -869,6 +968,143 @@ describe("createStore", () => {
         .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0))
         .map((item) => item.title)
     ).toEqual(["Third note", "First note", "Second note"]);
+  });
+
+  it("groups two top-level cards into a bundle and hides the member cards from the top level", () => {
+    const store = createStore("brain-desktop.db");
+
+    const first = store.captureTextOrLink("Cover note");
+    const second = store.captureTextOrLink("Source note");
+    const coverItemId = first.items.find((item) => item.title === "Cover note")?.id ?? 0;
+    const sourceItemId = second.items.find((item) => item.title === "Source note")?.id ?? 0;
+
+    const grouped = store.groupItems(sourceItemId, coverItemId);
+    const topLevelItems = grouped.items.filter((item) => item.bundleParentId == null);
+    const memberItems = grouped.items.filter((item) => item.bundleParentId != null);
+
+    expect(topLevelItems).toHaveLength(1);
+    expect(topLevelItems[0]).toEqual(
+      expect.objectContaining({
+        kind: "bundle",
+        title: "",
+        bundleCount: 2,
+      })
+    );
+    expect(memberItems.map((item) => item.title)).toEqual(["Cover note", "Source note"]);
+  });
+
+  it("adds another top-level card into an existing bundle", () => {
+    const store = createStore("brain-desktop.db");
+
+    store.captureTextOrLink("Cover note");
+    let snapshot = store.captureTextOrLink("Source note");
+    const coverItemId = snapshot.items.find((item) => item.title === "Cover note")?.id ?? 0;
+    const sourceItemId = snapshot.items.find((item) => item.title === "Source note")?.id ?? 0;
+    snapshot = store.groupItems(sourceItemId, coverItemId);
+
+    const bundleItemId = snapshot.items.find((item) => item.kind === "bundle")?.id ?? 0;
+    snapshot = store.captureTextOrLink("Third note");
+    const thirdItemId = snapshot.items.find((item) => item.title === "Third note")?.id ?? 0;
+
+    const grouped = store.groupItems(thirdItemId, bundleItemId);
+
+    expect(grouped.items.filter((item) => item.bundleParentId == null)).toEqual([
+      expect.objectContaining({ id: bundleItemId, kind: "bundle", bundleCount: 3 }),
+    ]);
+    expect(grouped.items.filter((item) => item.bundleParentId === bundleItemId)).toHaveLength(3);
+  });
+
+  it("moves a bundle member back to the top level and dissolves the bundle when one member remains", () => {
+    const store = createStore("brain-desktop.db");
+
+    store.captureTextOrLink("Cover note");
+    const created = store.captureTextOrLink("Source note");
+    const coverItemId = created.items.find((item) => item.title === "Cover note")?.id ?? 0;
+    const sourceItemId = created.items.find((item) => item.title === "Source note")?.id ?? 0;
+    const grouped = store.groupItems(sourceItemId, coverItemId);
+    const sourceMemberId = grouped.items.find((item) => item.title === "Source note")?.id ?? 0;
+
+    const moved = store.moveItemToIndex(sourceMemberId, 1);
+
+    expect(moved.items.find((item) => item.kind === "bundle")).toBeUndefined();
+    expect(moved.items.filter((item) => item.bundleParentId == null).map((item) => item.title)).toEqual([
+      "Cover note",
+      "Source note",
+    ]);
+  });
+
+  it("moves a bundle member back to the top level and keeps the bundle with the remaining members", () => {
+    const store = createStore("brain-desktop.db");
+
+    store.captureTextOrLink("Cover note");
+    let snapshot = store.captureTextOrLink("Source note");
+    const coverItemId = snapshot.items.find((item) => item.title === "Cover note")?.id ?? 0;
+    const sourceItemId = snapshot.items.find((item) => item.title === "Source note")?.id ?? 0;
+    snapshot = store.groupItems(sourceItemId, coverItemId);
+
+    snapshot = store.captureTextOrLink("Third note");
+    const thirdItemId = snapshot.items.find((item) => item.title === "Third note")?.id ?? 0;
+    snapshot = store.groupItems(thirdItemId, snapshot.items.find((item) => item.kind === "bundle")?.id ?? 0);
+
+    const sourceMemberId = snapshot.items.find((item) => item.title === "Source note")?.id ?? 0;
+    const sourceBundleId = snapshot.items.find((item) => item.kind === "bundle")?.id ?? 0;
+
+    const moved = store.moveItemToIndex(sourceMemberId, 1);
+
+    expect(moved.items.find((item) => item.id === sourceMemberId)).toEqual(
+      expect.objectContaining({
+        title: "Source note",
+        bundleParentId: null,
+      })
+    );
+    expect(moved.items.find((item) => item.id === sourceBundleId)).toEqual(
+      expect.objectContaining({
+        kind: "bundle",
+        bundleCount: 2,
+      })
+    );
+    expect(moved.items.filter((item) => item.bundleParentId === sourceBundleId).map((item) => item.title)).toEqual([
+      "Cover note",
+      "Third note",
+    ]);
+  });
+
+  it("moves a bundle member into another bundle and dissolves the source bundle when one member remains", () => {
+    const store = createStore("brain-desktop.db");
+
+    store.captureTextOrLink("Cover A");
+    let snapshot = store.captureTextOrLink("Member A");
+    const coverAId = snapshot.items.find((item) => item.title === "Cover A")?.id ?? 0;
+    const memberAId = snapshot.items.find((item) => item.title === "Member A")?.id ?? 0;
+    snapshot = store.groupItems(memberAId, coverAId);
+
+    store.captureTextOrLink("Cover B");
+    snapshot = store.captureTextOrLink("Member B");
+    const coverBId = snapshot.items.find((item) => item.title === "Cover B")?.id ?? 0;
+    const memberBId = snapshot.items.find((item) => item.title === "Member B")?.id ?? 0;
+    snapshot = store.groupItems(memberBId, coverBId);
+
+    const sourceMember = snapshot.items.find((item) => item.title === "Member A");
+    const targetMember = snapshot.items.find((item) => item.title === "Member B");
+    const sourceBundleId = sourceMember?.bundleParentId ?? 0;
+    const targetBundleId = targetMember?.bundleParentId ?? 0;
+    const sourceMemberId = sourceMember?.id ?? 0;
+
+    const moved = store.groupItems(sourceMemberId, targetBundleId);
+
+    expect(moved.items.find((item) => item.id === sourceBundleId && item.kind === "bundle")).toBeUndefined();
+    expect(moved.items.find((item) => item.title === "Cover A" && item.bundleParentId == null)).toBeDefined();
+    expect(moved.items.find((item) => item.id === targetBundleId)).toEqual(
+      expect.objectContaining({
+        kind: "bundle",
+        bundleCount: 3,
+      })
+    );
+    expect(
+      moved.items
+        .filter((item) => item.bundleParentId === targetBundleId)
+        .map((item) => item.title)
+    ).toEqual(["Cover B", "Member B", "Member A"]);
   });
 
   it("closes the backing database handle", () => {

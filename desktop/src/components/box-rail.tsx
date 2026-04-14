@@ -1,4 +1,5 @@
 import { DragEvent, useState } from "react";
+import { resolveDroppedFilePaths } from "../dropped-file-paths";
 import type { Box, Item } from "../shared/types";
 
 type BoxRailProps = {
@@ -7,12 +8,11 @@ type BoxRailProps = {
   selectedBoxId: number | null;
   activePanel?: "workspace" | "settings" | "about";
   simpleMode?: boolean;
-  alwaysOnTop?: boolean;
   onDeleteItem?: (itemId: number) => void | Promise<void>;
   onDeleteBox?: (boxId: number) => void | Promise<void>;
   onEnterSimpleMode?: () => void | Promise<void>;
   onExitSimpleMode?: () => void | Promise<void>;
-  onToggleAlwaysOnTop?: (enabled: boolean) => void | Promise<void>;
+  onCollapseSimpleMode?: () => void | Promise<void>;
   onSelectPanel?: (panel: "workspace" | "settings" | "about") => void | Promise<void>;
   onSelectBox?: (boxId: number) => void | Promise<void>;
   onDropToBox?: (boxId: number, paths: string[]) => void | Promise<void>;
@@ -22,18 +22,11 @@ type BoxRailProps = {
   onReorderBox?: (boxId: number, direction: "up" | "down") => void | Promise<void>;
 };
 
-type FileLike = File & {
-  path?: string;
-};
-
 const DRAGGED_ITEM_MIME = "application/x-brain-item-id";
 const DRAGGED_BOX_MIME = "application/x-brain-box-id";
 
 function extractPaths(event: DragEvent<HTMLButtonElement>) {
-  const files = Array.from(event.dataTransfer?.files ?? []);
-  return files
-    .map((file) => (file as FileLike).path ?? "")
-    .filter((path) => path.trim().length > 0);
+  return resolveDroppedFilePaths(event.dataTransfer?.files);
 }
 
 function extractDroppedText(event: DragEvent<HTMLButtonElement>) {
@@ -64,11 +57,11 @@ function extractImageFile(event: DragEvent<HTMLElement>) {
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("璇诲彇鍥剧墖澶辫触"));
+    reader.onerror = () => reject(new Error("读取图片失败"));
     reader.onload = () => {
       const result = typeof reader.result === "string" ? reader.result : "";
       if (!result) {
-        reject(new Error("璇诲彇鍥剧墖澶辫触"));
+        reject(new Error("读取图片失败"));
         return;
       }
       resolve(result);
@@ -101,18 +94,54 @@ function getDraggedItemValue(event: DragEvent<HTMLElement>) {
     : "";
 }
 
+function HomeIcon() {
+  return (
+    <svg
+      className="simple-mode-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4.5 10.5 12 4l7.5 6.5" />
+      <path d="M6.5 9.5V19h11V9.5" />
+    </svg>
+  );
+}
+
+function FloatingBallIcon() {
+  return (
+    <svg
+      className="simple-mode-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="7.5" />
+      <path d="M8.5 12h7" />
+      <path d="M12 8.5v7" />
+    </svg>
+  );
+}
+
 export function BoxRail({
   boxes,
   items,
   selectedBoxId,
   activePanel = "workspace",
   simpleMode = false,
-  alwaysOnTop = false,
   onDeleteItem = async () => undefined,
   onDeleteBox = async () => undefined,
   onEnterSimpleMode = async () => undefined,
   onExitSimpleMode = async () => undefined,
-  onToggleAlwaysOnTop = async () => undefined,
+  onCollapseSimpleMode = async () => undefined,
   onSelectPanel = async () => undefined,
   onSelectBox = async () => undefined,
   onDropToBox = async () => undefined,
@@ -362,7 +391,11 @@ export function BoxRail({
             <nav className="rail-nav" aria-label="应用导航">
               <button
                 type="button"
-                className={activePanel === "workspace" ? "rail-nav-button rail-nav-button-primary active" : "rail-nav-button rail-nav-button-primary"}
+                className={
+                  activePanel === "workspace"
+                    ? "rail-nav-button rail-nav-button-primary active"
+                    : "rail-nav-button rail-nav-button-primary"
+                }
                 aria-label="打开主界面"
                 onClick={() => void onSelectPanel("workspace")}
               >
@@ -401,7 +434,7 @@ export function BoxRail({
         <div className="rail-footer-tools">
           <div
             className={trashActive ? "trash-drop-zone rail-trash-drop-zone active" : "trash-drop-zone rail-trash-drop-zone"}
-            aria-label="删除垃圾桶"
+            aria-label="删除垃圾箱"
             data-testid="quick-panel-trash"
             data-drop-kind={trashActive ?? "idle"}
             onDragEnter={handleTrashDragOver}
@@ -409,8 +442,8 @@ export function BoxRail({
             onDragLeave={handleTrashDragLeave}
             onDrop={(event) => void handleTrashDrop(event)}
           >
-            <span className="sr-only">快速面板</span>
-            <strong>垃圾桶</strong>
+            <span className="sr-only">快速面板垃圾箱</span>
+            <strong>垃圾箱</strong>
             <span>把卡片或盒子拖到这里删除</span>
           </div>
         </div>
@@ -419,22 +452,23 @@ export function BoxRail({
         <div className="simple-mode-footer">
           <button
             type="button"
-            className={alwaysOnTop ? "simple-mode-pin-button active" : "simple-mode-pin-button"}
-            aria-label="切换窗口置顶"
-            aria-pressed={alwaysOnTop}
-            title={alwaysOnTop ? "关闭置顶" : "开启置顶"}
-            onClick={() => void onToggleAlwaysOnTop(!alwaysOnTop)}
+            className="simple-mode-pin-button"
+            data-testid="simple-mode-collapse-button"
+            aria-label="Collapse to floating ball"
+            title="Collapse to floating ball"
+            onClick={() => void onCollapseSimpleMode()}
           >
-            <span aria-hidden="true">顶</span>
+            <FloatingBallIcon />
           </button>
           <button
             type="button"
             className="simple-mode-home-button"
+            data-testid="simple-mode-home-button"
             aria-label="回到主界面"
             title="回到主界面"
             onClick={() => void onExitSimpleMode()}
           >
-            <span aria-hidden="true">⌂</span>
+            <HomeIcon />
           </button>
         </div>
       ) : null}
