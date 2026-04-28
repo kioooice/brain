@@ -5,7 +5,17 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from .constants import TYPE_TEXT, STATUS_INBOX
+from .constants import (
+    STATUS_ARCHIVED,
+    STATUS_DONE,
+    STATUS_INBOX,
+    STATUS_TODO,
+    TYPE_GROUP,
+    TYPE_IMAGE,
+    TYPE_LINK,
+    TYPE_TEXT,
+    TYPE_VIDEO,
+)
 from .extensions import db
 
 
@@ -77,6 +87,72 @@ class Inspiration(db.Model):
         self.box_id = None
         self.is_inbox = True
 
+    def next_action(self) -> dict[str, str]:
+        """Return a lightweight workbench hint that pulls saved inspiration back into use.
+
+        The project used to treat each record mostly as stored content. This projection keeps
+        storage unchanged, but makes every card answer: “what should I do with this next?”
+        """
+
+        if self.status == STATUS_DONE:
+            return {
+                "tone": "done",
+                "label": "沉淀为可复用资产",
+                "description": "补一句复盘或适用场景，避免它只停留在完成记录里。",
+            }
+
+        if self.status == STATUS_ARCHIVED:
+            return {
+                "tone": "quiet",
+                "label": "保留为参考",
+                "description": "已经归档。需要时从来源、标签或盒子里再召回。",
+            }
+
+        if self.status == STATUS_TODO:
+            return {
+                "tone": "action",
+                "label": "拆成一个最小行动",
+                "description": "把这条灵感改写成 15 分钟内能开始的动作，或者合并到正在推进的项目。",
+            }
+
+        if self.is_inbox:
+            if self.content_type == TYPE_LINK:
+                return {
+                    "tone": "triage",
+                    "label": "30 秒判断：要不要进入项目？",
+                    "description": "打开链接，只补一句“为什么值得留下”，再放入最相关的主题盒子。",
+                }
+            if self.content_type in {TYPE_IMAGE, TYPE_VIDEO}:
+                return {
+                    "tone": "triage",
+                    "label": "提炼一个可复用观察",
+                    "description": "不要只存图或视频，写下它给你的视觉、产品或内容启发。",
+                }
+            if self.content_type == TYPE_GROUP:
+                return {
+                    "tone": "triage",
+                    "label": "给组合命名一个方向",
+                    "description": "先判断这组内容属于同一个问题、案例还是素材包，再放入盒子。",
+                }
+            return {
+                "tone": "triage",
+                "label": "补一句用途后归位",
+                "description": "用一句话说明它能服务哪个项目、文章或实验，再决定要不要留下。",
+            }
+
+        if self.box_id:
+            return {
+                "tone": "review",
+                "label": "从盒子回流到产出",
+                "description": "这条已经归位。下一步是把它链接到项目、选题、原型或待办，而不是继续收藏。",
+            }
+
+        return {
+            "tone": "triage",
+            "label": "重新判断归属",
+            "description": "确认它应该留在大口袋、进入主题盒子，还是直接删除。",
+        }
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -92,6 +168,7 @@ class Inspiration(db.Model):
             "box_id": self.box_id,
             "box_name": self.box.name if self.box else "",
             "is_inbox": self.is_inbox,
+            "next_action": self.next_action(),
             "notes": self.notes or "",
             "children": self.parsed_children(),
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
