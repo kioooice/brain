@@ -46,6 +46,7 @@ class TestMobileApiCase(unittest.TestCase):
             db.engine.dispose()
         self.client = None
         self.app = None
+        gc.collect()
         for _ in range(3):
             try:
                 self.temp_dir.cleanup()

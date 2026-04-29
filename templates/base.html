@@ -140,9 +140,17 @@
         .topbar {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 12px;
             margin-bottom: 16px;
             padding: 8px 4px;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
         }
 
         .page-title {
@@ -248,6 +256,13 @@
                             <p class="page-desc">一个本地运行的 Flask 小工具，用来收集、整理和跟踪那些一闪而过但值得留下来的东西。</p>
                         </div>
                     </div>
+                    {% if config.get("BRAIN_PASSWORD") and session.get("authenticated") %}
+                    <div class="topbar-actions">
+                        <form method="post" action="{{ url_for('main.logout') }}">
+                            <button class="btn" type="submit">退出</button>
+                        </form>
+                    </div>
+                    {% endif %}
                 </header>
                 {% block content %}{% endblock %}
             </main>

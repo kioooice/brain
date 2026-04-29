@@ -704,6 +704,8 @@ const deleteBoxBtn = document.getElementById("deleteBoxBtn");
 
 let pastedClipboardFile = null;
 let pastedPreviewUrl = "";
+let analyzeTimerId = 0;
+let analyzeController = null;
 
 function openImageLightbox(src, altText = "图片预览") {
   lightboxImage.src = src;
@@ -729,6 +731,7 @@ function openQuickModal() {
 }
 
 function closeQuickModal() {
+  cancelScheduledAnalysis();
   quickOverlay.classList.remove("active");
   quickOverlay.setAttribute("aria-hidden", "true");
   pastedClipboardFile = null;
@@ -805,16 +808,37 @@ function applySuggestedValue(element, value, overwrite = false) {
   if (overwrite || !current) element.value = value;
 }
 
+function cancelScheduledAnalysis() {
+  if (analyzeTimerId) {
+    window.clearTimeout(analyzeTimerId);
+    analyzeTimerId = 0;
+  }
+  if (analyzeController) {
+    analyzeController.abort();
+    analyzeController = null;
+  }
+}
+
 async function analyzeContent(overwrite = false) {
   const content = quickContent.value.trim();
-  if (!content) return;
+  if (!content) {
+    cancelScheduledAnalysis();
+    return;
+  }
+
+  if (analyzeController) {
+    analyzeController.abort();
+  }
+  analyzeController = new AbortController();
   try {
     const response = await fetch("/api/analyze-paste", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({content})
+      body: JSON.stringify({content}),
+      signal: analyzeController.signal,
     });
     const data = await response.json();
+    analyzeController = null;
     if (!response.ok || !data.success) {
       setHint(data.error || "自动识别失败", true);
       return;
@@ -826,9 +850,21 @@ async function analyzeContent(overwrite = false) {
     applySuggestedValue(quickCategory, data.category, overwrite || data.content_type === "链接");
     if (data.tags) applySuggestedValue(quickTags, data.tags, overwrite || data.content_type === "链接");
     setHint("识别完成，可直接保存。");
-  } catch (_error) {
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    analyzeController = null;
     setHint("自动识别失败。", true);
   }
+}
+
+function scheduleAnalyze(overwrite = false, delay = 260) {
+  if (analyzeTimerId) {
+    window.clearTimeout(analyzeTimerId);
+  }
+  analyzeTimerId = window.setTimeout(() => {
+    analyzeTimerId = 0;
+    analyzeContent(overwrite);
+  }, delay);
 }
 
 document.addEventListener("paste", async (event) => {
@@ -915,8 +951,8 @@ document.getElementById("fetchTitleBtn").addEventListener("click", async () => {
   }
 });
 
-quickContent.addEventListener("paste", () => setTimeout(() => analyzeContent(false), 80));
-quickContent.addEventListener("blur", () => analyzeContent(false));
+quickContent.addEventListener("input", () => scheduleAnalyze(false, 280));
+quickContent.addEventListener("blur", () => scheduleAnalyze(false, 80));
 quickFile.addEventListener("change", () => {
   const file = quickFile.files && quickFile.files[0] ? quickFile.files[0] : null;
   if (file) {

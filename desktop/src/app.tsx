@@ -111,7 +111,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!snapshot?.panelState.simpleMode || snapshot.panelState.simpleModeView !== "panel") {
+    if (
+      !snapshot?.panelState.simpleMode ||
+      (snapshot.panelState.simpleModeView !== "panel" && snapshot.panelState.simpleModeView !== "box")
+    ) {
       return;
     }
 
@@ -131,7 +134,10 @@ export function App() {
   }, [snapshot?.panelState.simpleMode]);
 
   useEffect(() => {
-    if (!snapshot?.panelState.simpleMode || snapshot.panelState.simpleModeView !== "panel") {
+    if (
+      !snapshot?.panelState.simpleMode ||
+      (snapshot.panelState.simpleModeView !== "panel" && snapshot.panelState.simpleModeView !== "box")
+    ) {
       return;
     }
 

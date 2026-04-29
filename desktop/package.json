@@ -6,6 +6,9 @@
   "main": ".webpack/main",
   "private": true,
   "scripts": {
+    "prestart": "node ./scripts/prepare-start.js",
+    "prepackage": "node ./scripts/prepare-start.js",
+    "premake": "node ./scripts/prepare-start.js",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",

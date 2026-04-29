@@ -86,24 +86,6 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-function FloatingBallIcon() {
-  return (
-    <svg
-      className="simple-mode-ball-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 8.4v7.2" />
-      <path d="M8.4 12h7.2" />
-    </svg>
-  );
-}
-
 function getPointerScreenPosition(event: {
   screenX: number;
   screenY: number;
@@ -121,7 +103,7 @@ type AppShellProps = {
   onQuickCapture: (input: string) => Promise<void>;
   onEnterSimpleMode?: () => Promise<void>;
   onExitSimpleMode?: () => Promise<void>;
-  onSetSimpleModeView?: (view: "ball" | "panel") => Promise<void>;
+  onSetSimpleModeView?: (view: "ball" | "panel" | "box") => Promise<void>;
   onMoveFloatingBall?: (deltaX: number, deltaY: number) => Promise<void>;
   onSelectBox?: (boxId: number) => Promise<void>;
   onDropPaths?: (paths: string[]) => Promise<void>;
@@ -296,9 +278,13 @@ export function AppShell({
   }, [snapshot.items, sortedBoxes]);
 
   async function openBox(boxId: number) {
-    setSelectedBoxId(boxId);
-    setWorkspaceView("box");
     await onSelectBox(boxId);
+    setSelectedBoxId(boxId);
+    if (simpleMode) {
+      await onSetSimpleModeView("box");
+      return;
+    }
+    setWorkspaceView("box");
   }
 
   async function submitNewBox() {
@@ -493,7 +479,13 @@ export function AppShell({
           box={currentBox}
           items={currentItems}
           bundleEntriesByItem={bundleEntriesByItem}
-          onBackToWorkspace={() => setWorkspaceView("home")}
+          onBackToWorkspace={() => {
+            if (simpleMode) {
+              void onSetSimpleModeView("panel");
+              return;
+            }
+            setWorkspaceView("home");
+          }}
           onPreviewImage={setPreviewImageItem}
           onRenameBox={onRenameBox}
           onRenameItem={onRenameItem}
@@ -638,7 +630,10 @@ export function AppShell({
               void onSetSimpleModeView("panel");
             }}
           >
-            <FloatingBallIcon />
+            <span className="simple-mode-floating-ball-core" aria-hidden="true" />
+            <span className="simple-mode-floating-ball-label">
+              Brain
+            </span>
           </button>
         </div>
       </div>
@@ -648,32 +643,43 @@ export function AppShell({
   return (
     <div className={simpleMode ? "app-shell simple-mode" : "app-shell"}>
       {simpleMode ? <div className="simple-mode-drag-strip" aria-hidden="true" /> : null}
-      <BoxRail
-        boxes={snapshot.boxes}
-        items={snapshot.items}
-        selectedBoxId={selectedBoxId}
-        activePanel={activePanel}
-        simpleMode={simpleMode}
-        onDeleteItem={onDeleteItem}
-        onDeleteBox={onDeleteBox}
-        onEnterSimpleMode={onEnterSimpleMode}
-        onExitSimpleMode={onExitSimpleMode}
-        onCollapseSimpleMode={() => void onSetSimpleModeView("ball")}
-        onSelectPanel={(panel) => {
-          setActivePanel(panel);
-          if (panel === "workspace") {
-            setWorkspaceView("home");
-          }
-        }}
-        onSelectBox={onSelectBox}
-        onDropToBox={onDropToBox}
-        onDropTextToBox={onDropTextToBox}
-        onDropImageToBox={onDropImageToBox}
-        onMoveItemToBox={onMoveItemToBox}
-        onReorderBox={onReorderBox}
-      />
-      {simpleMode ? null : activePanel === "workspace" ? workspacePanel : activePanel === "settings" ? settingsPanel : aboutPanel}
-      {previewImageItem && !simpleMode ? (
+      {simpleMode && simpleModeView === "box" ? null : (
+        <BoxRail
+          boxes={snapshot.boxes}
+          items={snapshot.items}
+          selectedBoxId={selectedBoxId}
+          activePanel={activePanel}
+          simpleMode={simpleMode}
+          onDeleteItem={onDeleteItem}
+          onDeleteBox={onDeleteBox}
+          onEnterSimpleMode={onEnterSimpleMode}
+          onExitSimpleMode={onExitSimpleMode}
+          onCollapseSimpleMode={() => void onSetSimpleModeView("ball")}
+          onSelectPanel={(panel) => {
+            setActivePanel(panel);
+            if (panel === "workspace") {
+              setWorkspaceView("home");
+            }
+          }}
+          onSelectBox={onSelectBox}
+          onOpenBox={openBox}
+          onDropToBox={onDropToBox}
+          onDropTextToBox={onDropTextToBox}
+          onDropImageToBox={onDropImageToBox}
+          onMoveItemToBox={onMoveItemToBox}
+          onReorderBox={onReorderBox}
+        />
+      )}
+      {simpleMode
+        ? simpleModeView === "box"
+          ? workspaceDetailPanel
+          : null
+        : activePanel === "workspace"
+          ? workspacePanel
+          : activePanel === "settings"
+            ? settingsPanel
+            : aboutPanel}
+      {previewImageItem ? (
         <div className="workbench-image-preview-layer" aria-label="工作台图片预览层">
           <div
             className="workbench-image-preview-backdrop"

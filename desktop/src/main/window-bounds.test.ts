@@ -6,12 +6,22 @@ import {
   resolveFloatingBallBounds,
   resolveLastMainWindowBounds,
   resolveMainModeBounds,
+  resolveSimpleBoxBounds,
   resolveSimpleModeBounds,
   resolveSimpleModeWindowBounds,
+  SIMPLE_BOX_WINDOW_BOUNDS,
   SIMPLE_WINDOW_BOUNDS,
 } from "./window-bounds";
 
 describe("resolveSimpleModeBounds", () => {
+  it("keeps the floating-ball window tightly wrapped around the button", () => {
+    expect(FLOATING_BALL_BOUNDS).toEqual({
+      width: 80,
+      height: 80,
+      margin: 26,
+    });
+  });
+
   it("places the floating ball near the bottom-right corner by default", () => {
     const workArea: Rectangle = {
       x: 0,
@@ -67,6 +77,22 @@ describe("resolveSimpleModeBounds", () => {
     });
   });
 
+  it("places the simple box window on the right side with the larger detail size", () => {
+    const workArea: Rectangle = {
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080,
+    };
+
+    expect(resolveSimpleBoxBounds(workArea)).toEqual({
+      x: 1920 - SIMPLE_BOX_WINDOW_BOUNDS.width,
+      y: Math.round((1080 - SIMPLE_BOX_WINDOW_BOUNDS.height) / 2),
+      width: SIMPLE_BOX_WINDOW_BOUNDS.width,
+      height: SIMPLE_BOX_WINDOW_BOUNDS.height,
+    });
+  });
+
   it("keeps the window inside the work area when the screen is shorter than the sidebar", () => {
     const workArea: Rectangle = {
       x: 100,
@@ -111,7 +137,10 @@ describe("resolveSimpleModeBounds", () => {
   });
 
   it("falls back to the default main window bounds when no previous main bounds exist", () => {
-    expect(resolveMainModeBounds()).toEqual(NORMAL_WINDOW_BOUNDS);
+    expect(resolveMainModeBounds()).toEqual({
+      width: NORMAL_WINDOW_BOUNDS.width,
+      height: NORMAL_WINDOW_BOUNDS.height,
+    });
   });
 
   it("keeps the remembered main window bounds when switching back from simple mode", () => {

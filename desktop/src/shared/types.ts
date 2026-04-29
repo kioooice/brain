@@ -39,7 +39,7 @@ export type WindowBounds = {
   height: number;
 };
 
-export type SimpleModeView = "ball" | "panel";
+export type SimpleModeView = "ball" | "panel" | "box";
 
 export type PanelState = {
   selectedBoxId: number | null;

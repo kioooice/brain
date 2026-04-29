@@ -20,6 +20,7 @@ type BoxRailProps = {
   onDropImageToBox?: (boxId: number, dataUrl: string, title: string) => void | Promise<void>;
   onMoveItemToBox?: (itemId: number, boxId: number) => void | Promise<void>;
   onReorderBox?: (boxId: number, direction: "up" | "down") => void | Promise<void>;
+  onOpenBox?: (boxId: number) => void | Promise<void>;
 };
 
 const DRAGGED_ITEM_MIME = "application/x-brain-item-id";
@@ -149,6 +150,7 @@ export function BoxRail({
   onDropImageToBox = async () => undefined,
   onMoveItemToBox = async () => undefined,
   onReorderBox = async () => undefined,
+  onOpenBox = async () => undefined,
 }: BoxRailProps) {
   const [dropTargetBoxId, setDropTargetBoxId] = useState<number | null>(null);
   const [draggedBoxId, setDraggedBoxId] = useState<number | null>(null);
@@ -344,6 +346,12 @@ export function BoxRail({
               onClick={() => {
                 void onSelectPanel("workspace");
                 void onSelectBox(box.id);
+              }}
+              onDoubleClick={() => {
+                if (!simpleMode) {
+                  return;
+                }
+                void onOpenBox(box.id);
               }}
               onDragStart={(event) => handleBoxDragStart(box.id, event)}
               onDragEnd={handleBoxDragEnd}

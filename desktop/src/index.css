@@ -148,47 +148,38 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 0;
   box-sizing: border-box;
   -webkit-app-region: drag;
 }
 
 .simple-mode-floating-ball-shell::before {
-  content: "";
-  position: absolute;
-  width: 78px;
-  height: 86px;
-  border-radius: 32px;
-  background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02) 72%);
-  filter: blur(10px);
-  opacity: 0.85;
-  pointer-events: none;
+  content: none;
 }
 
 .simple-mode-floating-ball {
   position: relative;
-  width: 75px;
-  height: 83px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 30px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.14)),
-    linear-gradient(155deg, rgba(244, 248, 252, 0.78), rgba(233, 225, 214, 0.44) 68%, rgba(226, 215, 201, 0.52));
-  color: rgba(38, 38, 35, 0.82);
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.14) 24%, transparent 26%),
+    linear-gradient(145deg, rgba(248, 251, 255, 0.96), rgba(223, 233, 255, 0.88) 64%, rgba(210, 223, 252, 0.94));
+  color: rgba(29, 40, 68, 0.88);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    inset 0 -10px 18px rgba(255, 255, 255, 0.12),
-    0 12px 26px rgba(82, 63, 41, 0.16),
-    0 2px 8px rgba(82, 63, 41, 0.1);
+    0 0 0 1px rgba(255, 255, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    inset 0 -12px 22px rgba(255, 255, 255, 0.12),
+    0 18px 38px rgba(76, 112, 192, 0.24),
+    0 5px 16px rgba(76, 112, 192, 0.14);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   overflow: hidden;
-  backdrop-filter: blur(16px) saturate(135%);
-  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(148%);
+  -webkit-backdrop-filter: blur(18px) saturate(148%);
   transition:
     transform 140ms ease,
     box-shadow 140ms ease,
@@ -198,49 +189,71 @@ body {
 }
 
 .simple-mode-floating-ball::before {
-  content: "";
-  position: absolute;
-  inset: 1px 2px auto 2px;
-  height: 47%;
-  border-radius: 27px 27px 20px 20px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.06));
-  opacity: 0.88;
-  pointer-events: none;
+  content: none;
 }
 
 .simple-mode-floating-ball::after {
   content: "";
   position: absolute;
-  inset: auto 8px 7px 8px;
-  height: 20px;
+  inset: auto 15px 10px 15px;
+  height: 16px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(196, 182, 165, 0.14), rgba(255, 255, 255, 0));
-  filter: blur(3px);
+  background: linear-gradient(180deg, rgba(112, 154, 255, 0.18), rgba(255, 255, 255, 0));
+  filter: blur(5px);
   pointer-events: none;
 }
 
 .simple-mode-floating-ball:hover {
   transform: translateY(-1px) scale(1.015);
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.56);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.18)),
-    linear-gradient(155deg, rgba(246, 249, 253, 0.82), rgba(236, 228, 218, 0.48) 68%, rgba(230, 219, 205, 0.56));
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.16) 25%, transparent 27%),
+    linear-gradient(145deg, rgba(251, 253, 255, 0.98), rgba(228, 237, 255, 0.92) 64%, rgba(214, 227, 255, 0.96));
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-    inset 0 -12px 20px rgba(255, 255, 255, 0.14),
-    0 16px 34px rgba(82, 63, 41, 0.18),
-    0 4px 12px rgba(82, 63, 41, 0.12);
+    0 0 0 1px rgba(255, 255, 255, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -12px 24px rgba(255, 255, 255, 0.16),
+    0 22px 42px rgba(76, 112, 192, 0.28),
+    0 8px 20px rgba(76, 112, 192, 0.18);
 }
 
-.simple-mode-ball-icon {
+.simple-mode-floating-ball:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -12px 24px rgba(255, 255, 255, 0.16),
+    0 22px 42px rgba(76, 112, 192, 0.28),
+    0 8px 20px rgba(76, 112, 192, 0.18),
+    0 0 0 8px rgba(109, 128, 247, 0.14);
+}
+
+.simple-mode-floating-ball-core {
+  position: absolute;
+  inset: 16px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.18) 24%, transparent 26%),
+    linear-gradient(180deg, rgba(246, 250, 255, 0.9), rgba(226, 235, 255, 0.48));
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 8px 16px rgba(92, 133, 224, 0.12);
+  pointer-events: none;
+}
+
+.simple-mode-floating-ball-label {
   position: relative;
   z-index: 1;
-  width: 18px;
-  height: 18px;
-  display: block;
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.35));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(46, 62, 104, 0.86);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.44);
 }
 
 .app-shell > * ,

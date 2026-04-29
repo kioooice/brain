@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, redirect, render_template, request, send_from_directory, url_for, current_app
+from urllib.parse import urlparse
+
+from flask import Blueprint, jsonify, redirect, render_template, request, send_from_directory, url_for, current_app, session
+from sqlalchemy.orm import selectinload
 
 from .constants import CONTENT_TYPES, STATUSES, STATUS_COLORS, TYPE_GROUP, TYPE_ICONS, TYPE_TEXT
 from .extensions import db
@@ -46,6 +49,58 @@ def _box_error_status(message: str) -> int:
     return 404 if message == "盒子不存在" else 400
 
 
+def _serialize_items_with_suggestions(items: list[Inspiration], boxes: list[Box]) -> list[dict]:
+    serialized_items: list[dict] = []
+    for item in items:
+        item_dict = serialize_item(item)
+        try:
+            item_dict["suggested_boxes"] = suggest_boxes_for_item(item, boxes=boxes)
+        except Exception:
+            item_dict["suggested_boxes"] = []
+        serialized_items.append(item_dict)
+    return serialized_items
+
+
+def _safe_next_target(target: str | None) -> str:
+    if not target:
+        return url_for("main.index")
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return url_for("main.index")
+    if not target.startswith("/") or target.startswith("//"):
+        return url_for("main.index")
+    return target
+
+
+@bp.route("/healthz")
+def healthz():
+    return jsonify({"ok": True})
+
+
+@bp.route("/login", methods=["GET", "POST"])
+def login():
+    configured_password = (current_app.config.get("BRAIN_PASSWORD") or "").strip()
+    if not configured_password:
+        return redirect(url_for("main.index"))
+
+    next_target = _safe_next_target(request.args.get("next") or request.form.get("next"))
+    error = ""
+    if request.method == "POST":
+        if request.form.get("password", "") == configured_password:
+            session["authenticated"] = True
+            session.permanent = True
+            return redirect(next_target)
+        error = "密码不对"
+
+    return render_template("login.html", error=error, next_target=next_target)
+
+
+@bp.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("main.login"))
+
+
 @bp.route("/")
 def index():
     category_filter = request.args.get("category", "").strip()
@@ -58,7 +113,8 @@ def index():
     selected_box_items = []
     selected_box_prev = None
     selected_box_next = None
-    boxes = [box.to_dict() for box in get_boxes()]
+    box_records = get_boxes()
+    boxes = [box.to_dict() for box in box_records]
 
     if box_id_raw.isdigit():
         selected_box = db.session.get(Box, int(box_id_raw))
@@ -70,36 +126,22 @@ def index():
                 selected_box_next = boxes[selected_index + 1]
 
     items = filter_items(category_filter, type_filter, status_filter, search)
-    serialized_items = [serialize_item(item) for item in items]
     inbox_source_items = items if any((category_filter, type_filter, status_filter, search)) else get_inbox_items(show_sorted=show_sorted)
     if not show_sorted and any((category_filter, type_filter, status_filter, search)):
         inbox_source_items = [item for item in inbox_source_items if item.is_inbox]
-    inbox_items = []
-    for item in inbox_source_items:
-        item_dict = serialize_item(item)
-        try:
-            item_dict["suggested_boxes"] = suggest_boxes_for_item(item)
-        except Exception:
-            item_dict["suggested_boxes"] = []
-        inbox_items.append(item_dict)
+    inbox_items = _serialize_items_with_suggestions(inbox_source_items, box_records)
 
     if selected_box:
         box_items = (
-            Inspiration.query.filter(Inspiration.box_id == selected_box.id)
+            Inspiration.query.options(selectinload(Inspiration.box))
+            .filter(Inspiration.box_id == selected_box.id)
             .order_by(Inspiration.created_at.desc())
             .all()
         )
-        for item in box_items:
-            item_dict = serialize_item(item)
-            try:
-                item_dict["suggested_boxes"] = suggest_boxes_for_item(item)
-            except Exception:
-                item_dict["suggested_boxes"] = []
-            selected_box_items.append(item_dict)
+        selected_box_items = _serialize_items_with_suggestions(box_items, box_records)
 
     return render_template(
         "index.html",
-        items=serialized_items,
         inbox_items=inbox_items,
         selected_box=selected_box.to_dict() if selected_box else None,
         selected_box_items=selected_box_items,

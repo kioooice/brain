@@ -78,6 +78,7 @@ class TestAppCase(unittest.TestCase):
             db.engine.dispose()
         self.client = None
         self.app = None
+        gc.collect()
         for _ in range(3):
             try:
                 self.temp_dir.cleanup()
@@ -85,6 +86,26 @@ class TestAppCase(unittest.TestCase):
             except (PermissionError, NotADirectoryError):
                 gc.collect()
                 time.sleep(0.05)
+
+    def create_protected_client(self):
+        protected_app = create_app(
+            {
+                "TESTING": True,
+                "SQLALCHEMY_DATABASE_URI": f"sqlite:///{self.db_path.as_posix()}",
+                "UPLOAD_FOLDER": str(self.upload_dir),
+                "BRAIN_PASSWORD": "topsecret",
+                "SECRET_KEY": "test-secret",
+            }
+        )
+        protected_client = protected_app.test_client()
+
+        def cleanup_protected_app():
+            with protected_app.app_context():
+                db.session.remove()
+                db.engine.dispose()
+
+        self.addCleanup(cleanup_protected_app)
+        return protected_client
 
     def test_index_page_renders(self):
         response = self.client.get("/")
@@ -444,6 +465,30 @@ class TestAppCase(unittest.TestCase):
             self.assertEqual(suggestions[0]["name"], "产品灵感")
             self.assertLessEqual(len(suggestions), 3)
 
+    def test_suggest_boxes_can_reuse_preloaded_boxes(self):
+        with self.app.app_context():
+            product_box = Box(name="产品灵感", color="#f97316", description="产品方向")
+            design_box = Box(name="设计参考", color="#2563eb", description="界面")
+            db.session.add_all([product_box, design_box])
+            db.session.commit()
+
+            item = Inspiration(
+                title="AI 产品首页拆解",
+                content="Landing page inspiration",
+                category="产品",
+                tags="AI, 产品, 设计",
+            )
+            db.session.add(item)
+            db.session.commit()
+
+            preloaded_boxes = get_boxes()
+            suggestions = suggest_boxes_for_item(item, boxes=preloaded_boxes)
+            default_suggestions = suggest_boxes_for_item(item)
+
+            self.assertGreaterEqual(len(suggestions), 1)
+            self.assertEqual(suggestions[0]["name"], "产品灵感")
+            self.assertEqual(suggestions, default_suggestions)
+
     def test_get_inbox_items_excludes_sorted_items_by_default(self):
         with self.app.app_context():
             box = Box(name="内容选题", color="#22c55e")
@@ -474,7 +519,46 @@ class TestAppCase(unittest.TestCase):
         self.assertIn("inbox_items", context)
         self.assertIn("show_sorted", context)
         self.assertEqual(context["boxes"][0]["name"], "产品灵感")
-        self.assertEqual([item["id"] for item in context["inbox_items"]], [self.first_id, self.second_id])
+        self.assertEqual([item["id"] for item in context["inbox_items"]], [self.second_id, self.first_id])
+
+    def test_healthz_returns_ok_payload(self):
+        response = self.client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"ok": True})
+
+    def test_auth_redirects_anonymous_browser_requests(self):
+        protected_client = self.create_protected_client()
+
+        response = protected_client.get("/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_login_unlocks_protected_routes(self):
+        protected_client = self.create_protected_client()
+
+        login_response = protected_client.post(
+            "/login",
+            data={"password": "topsecret"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(login_response.status_code, 302)
+        self.assertEqual(login_response.headers["Location"], "/")
+
+        protected_response = protected_client.get("/")
+        self.assertEqual(protected_response.status_code, 200)
+
+    def test_auth_returns_json_for_protected_api_requests(self):
+        protected_client = self.create_protected_client()
+
+        response = protected_client.get("/api/items")
+
+        self.assertEqual(response.status_code, 401)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"], "未登录")
 
     def test_place_item_into_box_api_moves_item_out_of_inbox(self):
         with self.app.app_context():

@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 from flask import current_app, request
 from sqlalchemy import func, or_
+from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
 from .constants import (
@@ -160,7 +161,11 @@ def get_stats() -> dict[str, int]:
 
 
 def get_boxes() -> list[Box]:
-    return Box.query.order_by(Box.sort_order.asc(), Box.created_at.asc()).all()
+    return (
+        Box.query.options(selectinload(Box.items))
+        .order_by(Box.sort_order.asc(), Box.created_at.asc())
+        .all()
+    )
 
 
 def update_box(box_id: int, name: str, color: str, description: str) -> Box:
@@ -225,7 +230,7 @@ def delete_box(box_id: int) -> int:
 
 
 def get_inbox_items(show_sorted: bool = False) -> list[Inspiration]:
-    query = Inspiration.query.order_by(Inspiration.created_at.desc())
+    query = Inspiration.query.options(selectinload(Inspiration.box)).order_by(Inspiration.created_at.desc())
     if not show_sorted:
         query = query.filter(Inspiration.is_inbox.is_(True))
     return query.all()
@@ -236,14 +241,14 @@ def normalize_box_tokens(text: str) -> set[str]:
     return {token for token in tokens if token}
 
 
-def suggest_boxes_for_item(item: Inspiration, limit: int = 3) -> list[dict]:
+def suggest_boxes_for_item(item: Inspiration, limit: int = 3, boxes: list[Box] | None = None) -> list[dict]:
     if not item:
         return []
 
     item_terms = normalize_box_tokens(" ".join([item.title or "", item.category or "", item.tags or "", item.source or ""]))
     scored_boxes: list[dict] = []
 
-    for box in get_boxes():
+    for box in boxes if boxes is not None else get_boxes():
         score = 0
         box_terms = normalize_box_tokens(" ".join([box.name or "", box.description or ""]))
 
@@ -287,7 +292,7 @@ def place_item_into_box(item: Inspiration, box_id: int) -> Inspiration:
 
 
 def filter_items(category_filter: str, type_filter: str, status_filter: str, search: str) -> list[Inspiration]:
-    query = Inspiration.query
+    query = Inspiration.query.options(selectinload(Inspiration.box))
 
     if category_filter:
         query = query.filter(Inspiration.category == category_filter)

@@ -15,9 +15,16 @@ export const SIMPLE_WINDOW_BOUNDS = {
   minHeight: 420,
 } as const;
 
+export const SIMPLE_BOX_WINDOW_BOUNDS = {
+  width: 1120,
+  height: 760,
+  minWidth: 900,
+  minHeight: 620,
+} as const;
+
 export const FLOATING_BALL_BOUNDS = {
-  width: 96,
-  height: 88,
+  width: 80,
+  height: 80,
   margin: 26,
 } as const;
 
@@ -65,6 +72,13 @@ export function resolveSimpleModeBounds(workArea: Rectangle): Rectangle {
   return resolveSimpleModeWindowBounds(workArea, {
     width: SIMPLE_WINDOW_BOUNDS.minWidth,
     height: SIMPLE_WINDOW_BOUNDS.minHeight,
+  });
+}
+
+export function resolveSimpleBoxBounds(workArea: Rectangle): Rectangle {
+  return resolveSimpleModeWindowBounds(workArea, {
+    width: SIMPLE_BOX_WINDOW_BOUNDS.width,
+    height: SIMPLE_BOX_WINDOW_BOUNDS.height,
   });
 }
 

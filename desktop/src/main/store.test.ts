@@ -39,7 +39,7 @@ type PanelStateRow = {
   quick_panel_open: number;
   simple_mode: number;
   always_on_top: number;
-  simple_mode_view: "ball" | "panel";
+  simple_mode_view: "ball" | "panel" | "box";
   floating_ball_x: number | null;
   floating_ball_y: number | null;
   floating_ball_width: number | null;
@@ -90,7 +90,7 @@ class FakeDatabase {
           quickPanelOpen = 1,
           simpleMode = 0,
           alwaysOnTop = 0,
-          simpleModeView: "ball" | "panel" = "ball",
+          simpleModeView: "ball" | "panel" | "box" = "ball",
           floatingBallX: number | null = null,
           floatingBallY: number | null = null,
           floatingBallWidth: number | null = null,
@@ -590,6 +590,16 @@ describe("createStore", () => {
 
     expect(updated.panelState.simpleMode).toBe(false);
     expect(updated.panelState.simpleModeView).toBe("ball");
+  });
+
+  it("persists box detail mode in panel state", () => {
+    const store = createStore("brain-desktop.db");
+
+    store.setSimpleMode(true);
+    const updated = store.setSimpleModeView("box");
+
+    expect(updated.panelState.simpleModeView).toBe("box");
+    expect(store.getWorkbenchSnapshot().panelState.simpleModeView).toBe("box");
   });
 
   it("persists always-on-top in panel state", () => {

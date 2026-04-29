@@ -14,5 +14,9 @@ desktop/.webpack/
 desktop/dist/
 desktop/out/
 desktop/data/
+desktop/.packager-tmp/
+
+.packager-tmp/
+.superpowers/
 
 launcher.log

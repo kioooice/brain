@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 
@@ -23,6 +23,9 @@ describe("AppShell simple mode", () => {
     );
 
     expect(screen.getByTestId("simple-mode-floating-ball")).toBeInTheDocument();
+    expect(screen.getByText("Brain")).toBeInTheDocument();
+    expect(container.querySelector(".simple-mode-floating-ball-beacon")).toBeNull();
+    expect(container.querySelector(".simple-mode-floating-ball-core")).toBeInTheDocument();
     expect(container.querySelector(".box-list")).toBeNull();
     expect(container.querySelector(".workspace-column")).toBeNull();
     expect(container.querySelector(".quick-panel")).toBeNull();
@@ -170,5 +173,80 @@ describe("AppShell simple mode", () => {
 
     expect(onSetSimpleModeView).toHaveBeenCalledTimes(1);
     expect(onSetSimpleModeView).toHaveBeenCalledWith("ball");
+  });
+
+  it("requests box detail mode on double click in simple panel view", async () => {
+    const onSelectBox = vi.fn().mockResolvedValue(undefined);
+    const onSetSimpleModeView = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <AppShell
+        onQuickCapture={async () => undefined}
+        onSelectBox={onSelectBox}
+        onSetSimpleModeView={onSetSimpleModeView}
+        snapshot={{
+          boxes: [
+            { id: 1, name: "默认", color: "#f97316", description: "", sortOrder: 0 },
+            { id: 2, name: "AI", color: "#2563eb", description: "", sortOrder: 1 },
+          ],
+          items: [
+            {
+              id: 41,
+              boxId: 1,
+              kind: "text",
+              title: "",
+              content: "第一条笔记",
+              sourceUrl: "",
+              sourcePath: "",
+              bundleCount: 0,
+              sortOrder: 0,
+              createdAt: "2026-04-08T00:00:00.000Z",
+              updatedAt: "2026-04-08T00:00:00.000Z",
+            },
+          ],
+          panelState: { selectedBoxId: 1, quickPanelOpen: true, simpleMode: true, simpleModeView: "panel" },
+        }}
+      />
+    );
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: "选择盒子 默认" }));
+
+    await waitFor(() => expect(onSelectBox).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(onSetSimpleModeView).toHaveBeenCalledWith("box"));
+  });
+
+  it("renders the full box page when simple mode is in box view", () => {
+    render(
+      <AppShell
+        onQuickCapture={async () => undefined}
+        snapshot={{
+          boxes: [
+            { id: 1, name: "默认", color: "#f97316", description: "", sortOrder: 0 },
+            { id: 2, name: "AI", color: "#2563eb", description: "", sortOrder: 1 },
+          ],
+          items: [
+            {
+              id: 41,
+              boxId: 1,
+              kind: "text",
+              title: "",
+              content: "第一条笔记",
+              sourceUrl: "",
+              sourcePath: "",
+              bundleCount: 0,
+              sortOrder: 0,
+              createdAt: "2026-04-08T00:00:00.000Z",
+              updatedAt: "2026-04-08T00:00:00.000Z",
+            },
+          ],
+          panelState: { selectedBoxId: 1, quickPanelOpen: true, simpleMode: true, simpleModeView: "box" },
+        }}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "返回主界面" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索标题、内容或路径")).toBeInTheDocument();
+    expect(screen.getByText("第一条笔记")).toBeInTheDocument();
+    expect(screen.queryByTestId("rail-box-list")).not.toBeInTheDocument();
   });
 });

@@ -8,10 +8,12 @@ import { createStore } from "./main/store";
 import {
   FLOATING_BALL_BOUNDS,
   NORMAL_WINDOW_BOUNDS,
+  SIMPLE_BOX_WINDOW_BOUNDS,
   type WindowLaunchBounds,
   resolveFloatingBallBounds,
   resolveLastMainWindowBounds,
   resolveMainModeBounds,
+  resolveSimpleBoxBounds,
   resolveSimpleModeBounds,
   resolveSimpleModeWindowBounds,
   SIMPLE_WINDOW_BOUNDS,
@@ -25,7 +27,7 @@ if (require("electron-squirrel-startup")) {
   app.quit();
 }
 
-type WindowMode = "main" | "simple-ball" | "simple-panel";
+type WindowMode = "main" | "simple-ball" | "simple-panel" | "simple-box";
 
 let store: ReturnType<typeof createStore>;
 let mainWindow: BrowserWindow | null = null;
@@ -40,7 +42,8 @@ function getSimpleMode() {
 }
 
 function getSimpleModeView() {
-  return store.getWorkbenchSnapshot().panelState.simpleModeView === "panel" ? "panel" : "ball";
+  const view = store.getWorkbenchSnapshot().panelState.simpleModeView;
+  return view === "panel" || view === "box" ? view : "ball";
 }
 
 function getWindowMode(): WindowMode {
@@ -48,7 +51,8 @@ function getWindowMode(): WindowMode {
     return "main";
   }
 
-  return getSimpleModeView() === "panel" ? "simple-panel" : "simple-ball";
+  const view = getSimpleModeView();
+  return view === "panel" ? "simple-panel" : view === "box" ? "simple-box" : "simple-ball";
 }
 
 function getSimplePanelBounds(referenceBounds?: Rectangle): Rectangle {
@@ -62,6 +66,19 @@ function getSimplePanelBounds(referenceBounds?: Rectangle): Rectangle {
         height: referenceBounds.height,
       })
     : resolveSimpleModeBounds(display.workArea);
+}
+
+function getSimpleBoxBounds(referenceBounds?: Rectangle): Rectangle {
+  const display = referenceBounds
+    ? screen.getDisplayMatching(referenceBounds)
+    : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+
+  return referenceBounds
+    ? resolveSimpleModeWindowBounds(display.workArea, {
+        width: referenceBounds.width,
+        height: referenceBounds.height,
+      })
+    : resolveSimpleBoxBounds(display.workArea);
 }
 
 function getFloatingBallBounds(referenceBounds?: Rectangle): Rectangle {
@@ -99,6 +116,12 @@ function getWindowBoundsForMode(
     return getSimplePanelBounds(shouldPreservePanelSize ? options.currentWindowBounds : undefined);
   }
 
+  if (mode === "simple-box") {
+    const shouldPreserveBoxSize =
+      options.previousMode === "simple-box" && Boolean(options.currentWindowBounds);
+    return getSimpleBoxBounds(shouldPreserveBoxSize ? options.currentWindowBounds : undefined);
+  }
+
   return getFloatingBallBounds(
     options.previousMode === "simple-ball" ? options.currentWindowBounds : undefined
   );
@@ -127,12 +150,26 @@ function attachWindowBoundsPersistence(window: BrowserWindow, mode: WindowMode) 
 function createWindow(mode: WindowMode, bounds?: WindowLaunchBounds): BrowserWindow {
   lastWindowMode = mode;
   const simpleMode = mode !== "main";
-  const panelMode = mode === "simple-panel";
+  const panelMode = mode === "simple-panel" || mode === "simple-box";
   const initialBounds = bounds ?? getWindowBoundsForMode(mode);
   const window = new BrowserWindow({
     ...(initialBounds ?? NORMAL_WINDOW_BOUNDS),
-    minWidth: panelMode ? SIMPLE_WINDOW_BOUNDS.minWidth : mode === "simple-ball" ? FLOATING_BALL_BOUNDS.width : NORMAL_WINDOW_BOUNDS.minWidth,
-    minHeight: panelMode ? SIMPLE_WINDOW_BOUNDS.minHeight : mode === "simple-ball" ? FLOATING_BALL_BOUNDS.height : NORMAL_WINDOW_BOUNDS.minHeight,
+    minWidth:
+      mode === "simple-box"
+        ? SIMPLE_BOX_WINDOW_BOUNDS.minWidth
+        : panelMode
+          ? SIMPLE_WINDOW_BOUNDS.minWidth
+          : mode === "simple-ball"
+            ? FLOATING_BALL_BOUNDS.width
+            : NORMAL_WINDOW_BOUNDS.minWidth,
+    minHeight:
+      mode === "simple-box"
+        ? SIMPLE_BOX_WINDOW_BOUNDS.minHeight
+        : panelMode
+          ? SIMPLE_WINDOW_BOUNDS.minHeight
+          : mode === "simple-ball"
+            ? FLOATING_BALL_BOUNDS.height
+            : NORMAL_WINDOW_BOUNDS.minHeight,
     resizable: mode !== "simple-ball",
     maximizable: mode === "main",
     fullscreenable: mode === "main",
@@ -207,7 +244,8 @@ function ensureTray() {
 
 function showWindow(mode: WindowMode) {
   const currentMode = getWindowMode();
-  const nextMode = mode === "simple-ball" || mode === "simple-panel" ? mode : "main";
+  const nextMode =
+    mode === "simple-ball" || mode === "simple-panel" || mode === "simple-box" ? mode : "main";
 
   if (nextMode === "main") {
     if (currentMode !== "main") {
@@ -216,11 +254,11 @@ function showWindow(mode: WindowMode) {
       return;
     }
   } else {
-    const desiredView = nextMode === "simple-panel" ? "panel" : "ball";
+    const desiredView = nextMode === "simple-panel" ? "panel" : nextMode === "simple-box" ? "box" : "ball";
     if (!getSimpleMode()) {
       store.setSimpleMode(true);
-      if (desiredView === "panel") {
-        store.setSimpleModeView("panel");
+      if (desiredView === "panel" || desiredView === "box") {
+        store.setSimpleModeView(desiredView);
       }
       rebuildWindowForMode(nextMode, currentMode);
       return;
@@ -298,7 +336,10 @@ function handleSetSimpleModeView(view: SimpleModeView, senderWindowId?: number) 
   void senderWindowId;
   const previousMode = getWindowMode();
   store.setSimpleModeView(view);
-  rebuildWindowForMode(view === "panel" ? "simple-panel" : "simple-ball", previousMode);
+  rebuildWindowForMode(
+    view === "panel" ? "simple-panel" : view === "box" ? "simple-box" : "simple-ball",
+    previousMode
+  );
 }
 
 function handleMoveFloatingBall(deltaX: number, deltaY: number, senderWindowId?: number) {

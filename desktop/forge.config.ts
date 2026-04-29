@@ -7,13 +7,22 @@ import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-nati
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import { join } from 'node:path';
+import { clearWindowsReadOnlyAttributes } from './scripts/windows-attribute-utils.js';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
 
 const config: ForgeConfig = {
+  outDir: join(__dirname, '..', '.desktop-out'),
+  hooks: {
+    async packageAfterCopy(_forgeConfig, buildPath) {
+      clearWindowsReadOnlyAttributes(buildPath);
+    },
+  },
   packagerConfig: {
     asar: true,
+    tmpdir: false,
   },
   rebuildConfig: {},
   makers: [

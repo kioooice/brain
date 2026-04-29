@@ -194,7 +194,11 @@ export function createStore(filename: string): DesktopStore {
             simpleMode: Boolean(panelStateRow.simpleMode),
             alwaysOnTop: Boolean(panelStateRow.alwaysOnTop),
             simpleModeView:
-              panelStateRow.simpleModeView === "panel" ? "panel" : "ball",
+              panelStateRow.simpleModeView === "panel"
+                ? "panel"
+                : panelStateRow.simpleModeView === "box"
+                  ? "box"
+                  : "ball",
             floatingBallBounds:
               panelStateRow.floatingBallX == null ||
               panelStateRow.floatingBallY == null ||
@@ -249,7 +253,12 @@ export function createStore(filename: string): DesktopStore {
       quickPanelOpen: snapshot.panelState.quickPanelOpen,
       simpleMode: Boolean(snapshot.panelState.simpleMode),
       alwaysOnTop: Boolean(snapshot.panelState.alwaysOnTop),
-      simpleModeView: snapshot.panelState.simpleModeView === "panel" ? "panel" : "ball",
+      simpleModeView:
+        snapshot.panelState.simpleModeView === "panel"
+          ? "panel"
+          : snapshot.panelState.simpleModeView === "box"
+            ? "box"
+            : "ball",
       floatingBallBounds: snapshot.panelState.floatingBallBounds ?? null,
     };
   }
