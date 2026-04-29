@@ -1,4 +1,11 @@
-import type { BundleEntry, SimpleModeView, WorkbenchSnapshot } from "./shared/types";
+import type {
+  BundleEntry,
+  ClipboardCaptureBoxStatus,
+  ClipboardCaptureIpcResult,
+  ClipboardWatcherStatus,
+  SimpleModeView,
+  WorkbenchSnapshot,
+} from "./shared/types";
 
 declare global {
   interface Window {
@@ -9,6 +16,11 @@ declare global {
       moveFloatingBall(deltaX: number, deltaY: number): Promise<void>;
       getPathsForFiles(files: File[]): string[];
       setAlwaysOnTop(enabled: boolean): Promise<WorkbenchSnapshot>;
+      captureClipboardNow(): Promise<ClipboardCaptureIpcResult>;
+      setClipboardWatcherEnabled(enabled: boolean): Promise<ClipboardWatcherStatus>;
+      getClipboardWatcherStatus(): Promise<ClipboardWatcherStatus>;
+      setClipboardCaptureBox(boxId: number): Promise<ClipboardCaptureBoxStatus>;
+      getClipboardCaptureBox(): Promise<ClipboardCaptureBoxStatus>;
       captureTextOrLink(input: string): Promise<WorkbenchSnapshot>;
       captureTextOrLinkIntoBox(input: string, boxId: number): Promise<WorkbenchSnapshot>;
       captureImageData(dataUrl: string, title: string): Promise<WorkbenchSnapshot>;

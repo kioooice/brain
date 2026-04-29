@@ -101,6 +101,16 @@ describe("registerIpc", () => {
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setAlwaysOnTop, expect.any(Function));
   });
 
+  it("registers clipboard capture handlers", () => {
+    registerIpc(createStoreDouble());
+
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.captureClipboardNow, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setClipboardWatcherEnabled, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.getClipboardWatcherStatus, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setClipboardCaptureBox, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.getClipboardCaptureBox, expect.any(Function));
+  });
+
   it("registers card action handlers", () => {
     registerIpc(createStoreDouble());
 

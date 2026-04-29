@@ -8,13 +8,27 @@ export function shouldHideWindowToTray(isQuitting: boolean) {
 }
 
 export function buildTrayMenuTemplate(options: {
+  isClipboardWatcherRunning?: boolean;
+  onCaptureClipboard?: () => void;
+  onToggleClipboardWatcher?: () => void;
   onOpenMain: () => void;
   onOpenSimple: () => void;
   onQuit: () => void;
 }): MenuItemConstructorOptions[] {
   return [
     {
-      label: "打开主界面",
+      label: "立即收集剪贴板",
+      click: options.onCaptureClipboard,
+    },
+    {
+      label: options.isClipboardWatcherRunning ? "关闭自动监听" : "开启自动监听",
+      click: options.onToggleClipboardWatcher,
+    },
+    {
+      type: "separator",
+    },
+    {
+      label: "打开主窗口",
       click: options.onOpenMain,
     },
     {
@@ -32,6 +46,9 @@ export function buildTrayMenuTemplate(options: {
 }
 
 export function buildTrayMenu(options: {
+  isClipboardWatcherRunning?: boolean;
+  onCaptureClipboard?: () => void;
+  onToggleClipboardWatcher?: () => void;
   onOpenMain: () => void;
   onOpenSimple: () => void;
   onQuit: () => void;

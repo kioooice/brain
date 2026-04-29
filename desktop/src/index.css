@@ -1045,6 +1045,57 @@ body {
   gap: 4px;
 }
 
+.clipboard-capture-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+  color: var(--brain-text-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.clipboard-toggle,
+.capture-target-control {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(18, 18, 18, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.clipboard-toggle {
+  cursor: pointer;
+}
+
+.clipboard-toggle.active {
+  border-color: rgba(22, 163, 74, 0.16);
+  background: rgba(239, 253, 244, 0.82);
+  color: #13723a;
+}
+
+.capture-target-control span {
+  color: var(--brain-text-faint);
+}
+
+.capture-target-control select {
+  max-width: 140px;
+  border: 0;
+  background: transparent;
+  color: var(--brain-text);
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+}
+
 .canvas-header-kicker {
   display: flex;
   align-items: center;

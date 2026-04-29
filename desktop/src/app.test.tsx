@@ -76,6 +76,11 @@ beforeEach(() => {
     setSimpleModeView: vi.fn(),
     moveFloatingBall: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    captureClipboardNow: vi.fn(),
+    setClipboardWatcherEnabled: vi.fn(),
+    getClipboardWatcherStatus: vi.fn().mockResolvedValue({ running: false }),
+    setClipboardCaptureBox: vi.fn().mockResolvedValue({ boxId: 1, boxName: "Inbox" }),
+    getClipboardCaptureBox: vi.fn().mockResolvedValue({ boxId: 1, boxName: "Inbox" }),
     getPathsForFiles: vi.fn((files: File[]) => files.map((file) => `C:\\mock\\${file.name}`)),
     captureTextOrLink: vi.fn(),
     captureTextOrLinkIntoBox: vi.fn(),
@@ -1818,6 +1823,11 @@ describe("preload bridge", () => {
         setSimpleModeView: expect.any(Function),
         moveFloatingBall: expect.any(Function),
         setAlwaysOnTop: expect.any(Function),
+        captureClipboardNow: expect.any(Function),
+        setClipboardWatcherEnabled: expect.any(Function),
+        getClipboardWatcherStatus: expect.any(Function),
+        setClipboardCaptureBox: expect.any(Function),
+        getClipboardCaptureBox: expect.any(Function),
         getPathsForFiles: expect.any(Function),
         captureTextOrLink: expect.any(Function),
         captureTextOrLinkIntoBox: expect.any(Function),
@@ -1854,6 +1864,11 @@ describe("preload bridge", () => {
       setSimpleModeView: (view: "ball" | "panel") => Promise<unknown>;
       moveFloatingBall: (deltaX: number, deltaY: number) => Promise<unknown>;
       setAlwaysOnTop: (enabled: boolean) => Promise<unknown>;
+      captureClipboardNow: () => Promise<unknown>;
+      setClipboardWatcherEnabled: (enabled: boolean) => Promise<unknown>;
+      getClipboardWatcherStatus: () => Promise<unknown>;
+      setClipboardCaptureBox: (boxId: number) => Promise<unknown>;
+      getClipboardCaptureBox: () => Promise<unknown>;
       getPathsForFiles: (files: File[]) => string[];
       captureTextOrLink: (input: string) => Promise<unknown>;
       captureTextOrLinkIntoBox: (input: string, boxId: number) => Promise<unknown>;
@@ -1885,6 +1900,11 @@ describe("preload bridge", () => {
     await exposedApi.setSimpleModeView("panel");
     await exposedApi.moveFloatingBall(12, 18);
     await exposedApi.setAlwaysOnTop(true);
+    await exposedApi.captureClipboardNow();
+    await exposedApi.setClipboardWatcherEnabled(true);
+    await exposedApi.getClipboardWatcherStatus();
+    await exposedApi.setClipboardCaptureBox(7);
+    await exposedApi.getClipboardCaptureBox();
     expect(exposedApi.getPathsForFiles([new File(["fake"], "brief.docx")])).toEqual(["C:\\mock\\brief.docx"]);
     await exposedApi.captureTextOrLink("Quick note");
     await exposedApi.captureTextOrLinkIntoBox("Quick note", 7);
@@ -1915,45 +1935,50 @@ describe("preload bridge", () => {
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, "workbench/set-simple-mode-view", "panel");
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(4, "workbench/move-floating-ball", 12, 18);
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, "workbench/set-always-on-top", true);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, "workbench/capture-text-or-link", "Quick note");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, "workbench/capture-text-or-link-into-box", "Quick note", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, "workbench/capture-clipboard-now");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, "workbench/set-clipboard-watcher-enabled", true);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, "workbench/get-clipboard-watcher-status");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(9, "workbench/set-clipboard-capture-box", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(10, "workbench/get-clipboard-capture-box");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(11, "workbench/capture-text-or-link", "Quick note");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(12, "workbench/capture-text-or-link-into-box", "Quick note", 7);
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(
-      8,
+      13,
       "workbench/capture-image-data",
       "data:image/png;base64,ZmFrZQ==",
       "shot.png"
     );
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(
-      9,
+      14,
       "workbench/capture-image-data-into-box",
       "data:image/png;base64,ZmFrZQ==",
       "shot.png",
       7
     );
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(10, "workbench/capture-dropped-paths", ["C:\\assets\\hero.png"]);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(15, "workbench/capture-dropped-paths", ["C:\\assets\\hero.png"]);
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(
-      11,
+      16,
       "workbench/capture-dropped-paths-into-box",
       ["C:\\assets\\hero.png"],
       7
     );
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(12, "workbench/create-box", "Visuals");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(13, "workbench/update-box", 7, "Library", "Saved references");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(14, "workbench/reorder-box", 7, "up");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(15, "workbench/delete-box", 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(16, "workbench/delete-item", 42);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(17, "workbench/update-item-title", 42, "Renamed");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(18, "workbench/remove-bundle-entry", 42, "C:\\assets\\missing");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(19, "workbench/select-box", 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(20, "workbench/open-path", "C:\\assets\\hero.png");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(21, "workbench/open-external", "https://example.com");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(22, "workbench/copy-text", "C:\\assets\\hero.png");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(23, "workbench/group-items", 42, 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(24, "workbench/enrich-link-title", 42, "https://example.com");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(25, "workbench/move-item-to-box", 42, 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(26, "workbench/move-item-to-index", 42, 3);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(27, "workbench/reorder-item", 42, "down");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(28, "workbench/get-bundle-entries", 42);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(17, "workbench/create-box", "Visuals");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(18, "workbench/update-box", 7, "Library", "Saved references");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(19, "workbench/reorder-box", 7, "up");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(20, "workbench/delete-box", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(21, "workbench/delete-item", 42);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(22, "workbench/update-item-title", 42, "Renamed");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(23, "workbench/remove-bundle-entry", 42, "C:\\assets\\missing");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(24, "workbench/select-box", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(25, "workbench/open-path", "C:\\assets\\hero.png");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(26, "workbench/open-external", "https://example.com");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(27, "workbench/copy-text", "C:\\assets\\hero.png");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(28, "workbench/group-items", 42, 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(29, "workbench/enrich-link-title", 42, "https://example.com");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(30, "workbench/move-item-to-box", 42, 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(31, "workbench/move-item-to-index", 42, 3);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(32, "workbench/reorder-item", 42, "down");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(33, "workbench/get-bundle-entries", 42);
     expect(electronMocks.getPathForFile).toHaveBeenCalledWith(expect.objectContaining({ name: "brief.docx" }));
   });
 });

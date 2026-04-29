@@ -1,7 +1,14 @@
-import { app, BrowserWindow, screen, Tray } from "electron";
+import { app, BrowserWindow, globalShortcut, screen, Tray } from "electron";
 import type { Rectangle } from "electron";
 import { join } from "node:path";
 import { buildTrayMenu, createTrayIcon, shouldHideWindowToTray } from "./main/background";
+import {
+  captureClipboardNow,
+  isClipboardWatcherRunning,
+  setClipboardCaptureBoxId,
+  startClipboardWatcher,
+  stopClipboardWatcher,
+} from "./main/clipboard-capture";
 import { registerIpc } from "./main/ipc";
 import { installApplicationMenu, shouldShowNativeMenu } from "./main/menu";
 import { createStore } from "./main/store";
@@ -224,22 +231,30 @@ function updateApplicationMenu(mode: WindowMode) {
 
 function ensureTray() {
   if (tray) {
+    updateTrayMenu();
     return tray;
   }
 
   tray = new Tray(createTrayIcon());
   tray.setToolTip("Brain Desktop");
-  tray.setContextMenu(
+  updateTrayMenu();
+  tray.on("click", () => {
+    showWindow(lastWindowMode);
+  });
+  return tray;
+}
+
+function updateTrayMenu() {
+  tray?.setContextMenu(
     buildTrayMenu({
+      isClipboardWatcherRunning: isClipboardWatcherRunning(),
+      onCaptureClipboard: handleCaptureClipboardNow,
+      onToggleClipboardWatcher: handleToggleClipboardWatcher,
       onOpenMain: () => showWindow("main"),
       onOpenSimple: () => showWindow("simple-ball"),
       onQuit: quitApplication,
     })
   );
-  tray.on("click", () => {
-    showWindow(lastWindowMode);
-  });
-  return tray;
 }
 
 function showWindow(mode: WindowMode) {
@@ -320,9 +335,43 @@ function rebuildWindowForMode(nextMode: WindowMode, previousMode: WindowMode = l
 
 function quitApplication() {
   isQuitting = true;
+  stopClipboardWatcher();
   tray?.destroy();
   tray = null;
   app.quit();
+}
+
+function handleCaptureClipboardNow() {
+  const result = captureClipboardNow(store);
+  if (result.captured) {
+    console.info(`[clipboard-capture] ${result.reason}`);
+    return;
+  }
+
+  console.info(`[clipboard-capture] ${result.reason}`);
+}
+
+function handleToggleClipboardWatcher() {
+  const result = isClipboardWatcherRunning() ? stopClipboardWatcher() : startClipboardWatcher(store);
+  console.info(`[clipboard-capture] ${result.reason}`);
+  updateTrayMenu();
+}
+
+function registerGlobalShortcut(accelerator: string, handler: () => void) {
+  try {
+    const registered = globalShortcut.register(accelerator, handler);
+    if (!registered) {
+      console.error(`[globalShortcut] 注册失败：${accelerator}`);
+    }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.error(`[globalShortcut] 注册失败：${accelerator}。${message}`);
+  }
+}
+
+function registerGlobalShortcuts() {
+  registerGlobalShortcut("CommandOrControl+Shift+B", handleCaptureClipboardNow);
+  registerGlobalShortcut("CommandOrControl+Alt+B", handleToggleClipboardWatcher);
 }
 
 function handleToggleSimpleMode(enabled: boolean, senderWindowId?: number) {
@@ -377,6 +426,7 @@ function handleSetAlwaysOnTop(enabled: boolean, senderWindowId?: number) {
 
 app.whenReady().then(() => {
   store = createStore(join(app.getPath("userData"), "brain-desktop.db"));
+  setClipboardCaptureBoxId(store.getWorkbenchSnapshot().boxes[0]?.id ?? null);
   registerIpc(store, {
     onSetSimpleMode: handleToggleSimpleMode,
     onSetSimpleModeView: handleSetSimpleModeView,
@@ -385,11 +435,14 @@ app.whenReady().then(() => {
   });
   updateApplicationMenu(getWindowMode());
   ensureTray();
+  registerGlobalShortcuts();
   mainWindow = createWindow(getWindowMode());
 });
 
 app.on("before-quit", () => {
   isQuitting = true;
+  stopClipboardWatcher();
+  globalShortcut.unregisterAll();
 });
 
 app.on("window-all-closed", () => {

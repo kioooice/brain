@@ -55,3 +55,20 @@ export type WorkbenchSnapshot = {
   items: Item[];
   panelState: PanelState;
 };
+
+export type ClipboardCaptureIpcResult = {
+  captured: boolean;
+  kind: "text" | "image" | "empty";
+  reason: string;
+  snapshot?: WorkbenchSnapshot;
+};
+
+export type ClipboardWatcherStatus = {
+  running: boolean;
+  reason?: string;
+};
+
+export type ClipboardCaptureBoxStatus = {
+  boxId: number | null;
+  boxName: string;
+};

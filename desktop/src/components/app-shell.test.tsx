@@ -67,6 +67,40 @@ describe("AppShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "打开关于" }));
     expect(screen.getByRole("heading", { name: "Brain Desktop" })).toBeInTheDocument();
+    expect(screen.getByText("Ctrl+Shift+B 收集剪贴板；Ctrl+Alt+B 开启或关闭自动监听。")).toBeInTheDocument();
+  });
+
+  it("shows a watcher toggle and capture target selector on the home header", () => {
+    const onToggleClipboardWatcher = vi.fn().mockResolvedValue(undefined);
+    const onSetClipboardCaptureBox = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <AppShell
+        onQuickCapture={async () => undefined}
+        clipboardWatcherRunning={false}
+        clipboardCaptureBoxId={1}
+        onToggleClipboardWatcher={onToggleClipboardWatcher}
+        onSetClipboardCaptureBox={onSetClipboardCaptureBox}
+        snapshot={{
+          boxes: [
+            { id: 1, name: "默认", color: "#f97316", description: "", sortOrder: 0 },
+            { id: 2, name: "AI", color: "#2563eb", description: "", sortOrder: 1 },
+          ],
+          items: [],
+          panelState: { selectedBoxId: 2, quickPanelOpen: true },
+        }}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "自动监听：关" })).toBeInTheDocument();
+    expect(screen.queryByText("Ctrl+Shift+B 收集剪贴板")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("剪贴板进入盒子")).toHaveValue("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "自动监听：关" }));
+    fireEvent.change(screen.getByLabelText("剪贴板进入盒子"), { target: { value: "2" } });
+
+    expect(onToggleClipboardWatcher).toHaveBeenCalledTimes(1);
+    expect(onSetClipboardCaptureBox).toHaveBeenCalledWith(2);
   });
 
   it("enters simple mode from the rail navigation", () => {

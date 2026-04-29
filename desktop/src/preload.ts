@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC_CHANNELS } from "./shared/ipc";
-import type { BundleEntry, SimpleModeView, WorkbenchSnapshot } from "./shared/types";
+import type {
+  BundleEntry,
+  ClipboardCaptureBoxStatus,
+  ClipboardCaptureIpcResult,
+  ClipboardWatcherStatus,
+  SimpleModeView,
+  WorkbenchSnapshot,
+} from "./shared/types";
 
 contextBridge.exposeInMainWorld("brainDesktop", {
   bootstrap(): Promise<WorkbenchSnapshot> {
@@ -20,6 +27,21 @@ contextBridge.exposeInMainWorld("brainDesktop", {
   },
   setAlwaysOnTop(enabled: boolean): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.setAlwaysOnTop, enabled);
+  },
+  captureClipboardNow(): Promise<ClipboardCaptureIpcResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.captureClipboardNow);
+  },
+  setClipboardWatcherEnabled(enabled: boolean): Promise<ClipboardWatcherStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.setClipboardWatcherEnabled, enabled);
+  },
+  getClipboardWatcherStatus(): Promise<ClipboardWatcherStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getClipboardWatcherStatus);
+  },
+  setClipboardCaptureBox(boxId: number): Promise<ClipboardCaptureBoxStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.setClipboardCaptureBox, boxId);
+  },
+  getClipboardCaptureBox(): Promise<ClipboardCaptureBoxStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getClipboardCaptureBox);
   },
   captureTextOrLink(input: string): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.captureTextOrLink, input);

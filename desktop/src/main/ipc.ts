@@ -2,6 +2,14 @@ import { writeFile } from "node:fs/promises";
 import { clipboard, dialog, ipcMain, shell } from "electron";
 import { IPC_CHANNELS } from "../shared/ipc";
 import type { SimpleModeView, WorkbenchSnapshot } from "../shared/types";
+import {
+  captureClipboardNow,
+  getClipboardCaptureBoxId,
+  isClipboardWatcherRunning,
+  setClipboardCaptureBoxId,
+  startClipboardWatcher,
+  stopClipboardWatcher,
+} from "./clipboard-capture";
 import type { DesktopStore } from "./store";
 
 function getSafeExportName(bundleName: string) {
@@ -17,6 +25,19 @@ function getSafeExportName(bundleName: string) {
     .replace(/\s+/g, " ");
   const safe = normalized.slice(0, 80).trim();
   return safe || "brain-ai-context";
+}
+
+function getClipboardCaptureBoxStatus(store: DesktopStore) {
+  const snapshot = store.getWorkbenchSnapshot();
+  const fallbackBox = snapshot.boxes[0] ?? null;
+  const targetBoxId = getClipboardCaptureBoxId();
+  const targetBox =
+    targetBoxId == null ? fallbackBox : snapshot.boxes.find((box) => box.id === targetBoxId) ?? fallbackBox;
+
+  return {
+    boxId: targetBox?.id ?? null,
+    boxName: targetBox?.name ?? "收件箱",
+  };
 }
 
 export function registerIpc(
@@ -60,6 +81,20 @@ export function registerIpc(
 
     return store.setAlwaysOnTop(enabled);
   });
+  ipcMain.handle(IPC_CHANNELS.captureClipboardNow, () => captureClipboardNow(store));
+  ipcMain.handle(IPC_CHANNELS.setClipboardWatcherEnabled, (_event, enabled: boolean) =>
+    enabled ? startClipboardWatcher(store) : stopClipboardWatcher()
+  );
+  ipcMain.handle(IPC_CHANNELS.getClipboardWatcherStatus, () => ({
+    running: isClipboardWatcherRunning(),
+  }));
+  ipcMain.handle(IPC_CHANNELS.setClipboardCaptureBox, (_event, boxId: number) => {
+    const snapshot = store.getWorkbenchSnapshot();
+    const targetBox = snapshot.boxes.find((box) => box.id === boxId) ?? snapshot.boxes[0] ?? null;
+    setClipboardCaptureBoxId(targetBox?.id ?? null);
+    return getClipboardCaptureBoxStatus(store);
+  });
+  ipcMain.handle(IPC_CHANNELS.getClipboardCaptureBox, () => getClipboardCaptureBoxStatus(store));
   ipcMain.handle(IPC_CHANNELS.captureTextOrLink, (_event, input: string) => store.captureTextOrLink(input));
   ipcMain.handle(IPC_CHANNELS.captureTextOrLinkIntoBox, (_event, input: string, boxId: number) =>
     store.captureTextOrLinkIntoBox(input, boxId)

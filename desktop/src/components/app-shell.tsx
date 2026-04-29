@@ -130,6 +130,10 @@ type AppShellProps = {
   onLoadBundleEntries?: (itemId: number) => Promise<void>;
   bundleEntriesByItem?: Record<number, BundleEntry[]>;
   dropError?: string;
+  clipboardWatcherRunning?: boolean;
+  clipboardCaptureBoxId?: number | null;
+  onToggleClipboardWatcher?: () => Promise<void>;
+  onSetClipboardCaptureBox?: (boxId: number) => Promise<void>;
 };
 
 export function AppShell({
@@ -164,6 +168,10 @@ export function AppShell({
   onLoadBundleEntries = async () => undefined,
   bundleEntriesByItem = {},
   dropError = "",
+  clipboardWatcherRunning = false,
+  clipboardCaptureBoxId = null,
+  onToggleClipboardWatcher = async () => undefined,
+  onSetClipboardCaptureBox = async () => undefined,
 }: AppShellProps) {
   const [previewImageItem, setPreviewImageItem] = useState<WorkbenchSnapshot["items"][number] | null>(null);
   const [previewImageScale, setPreviewImageScale] = useState(1);
@@ -216,6 +224,7 @@ export function AppShell({
   }, [previewImageItem?.id]);
 
   const currentBox = snapshot.boxes.find((box) => box.id === selectedBoxId);
+  const captureTargetBoxId = clipboardCaptureBoxId ?? sortedBoxes[0]?.id ?? null;
   const currentItems = snapshot.items
     .filter((item) => item.boxId === selectedBoxId && item.bundleParentId == null)
     .sort((left, right) => {
@@ -278,13 +287,14 @@ export function AppShell({
   }, [snapshot.items, sortedBoxes]);
 
   async function openBox(boxId: number) {
-    await onSelectBox(boxId);
     setSelectedBoxId(boxId);
     if (simpleMode) {
+      await onSelectBox(boxId);
       await onSetSimpleModeView("box");
       return;
     }
     setWorkspaceView("box");
+    await onSelectBox(boxId);
   }
 
   async function submitNewBox() {
@@ -316,6 +326,10 @@ export function AppShell({
     if (droppedText) {
       await onDropTextToBox(boxId, droppedText);
     }
+  }
+
+  async function handleCaptureTargetChange(boxId: number) {
+    await onSetClipboardCaptureBox(boxId);
   }
 
   function handleImagePreviewWheel(event: ReactWheelEvent<HTMLDivElement>) {
@@ -362,6 +376,30 @@ export function AppShell({
           <div className="canvas-header-copy">
             <p className="eyebrow">主界面</p>
             <h1>盒子总览</h1>
+          </div>
+          <div className="clipboard-capture-status" aria-label="剪贴板收集状态">
+            <button
+              type="button"
+              className={clipboardWatcherRunning ? "clipboard-toggle active" : "clipboard-toggle"}
+              aria-pressed={clipboardWatcherRunning}
+              onClick={() => void onToggleClipboardWatcher()}
+            >
+              自动监听：{clipboardWatcherRunning ? "开" : "关"}
+            </button>
+            <label className="capture-target-control">
+              <span>进入</span>
+              <select
+                aria-label="剪贴板进入盒子"
+                value={captureTargetBoxId ?? ""}
+                onChange={(event) => void handleCaptureTargetChange(Number(event.target.value))}
+              >
+                {sortedBoxes.map((box) => (
+                  <option key={box.id} value={box.id}>
+                    {box.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <div className="workspace-home-actions">
             {creatingBox ? (
@@ -549,6 +587,10 @@ export function AppShell({
         <article className="static-panel-card">
           <h2>当前形态</h2>
           <p>界面采用侧栏导航加主工作区结构，简易模式作为独立的悬浮收纳入口。</p>
+        </article>
+        <article className="static-panel-card">
+          <h2>快捷键</h2>
+          <p>Ctrl+Shift+B 收集剪贴板；Ctrl+Alt+B 开启或关闭自动监听。</p>
         </article>
       </div>
     </section>

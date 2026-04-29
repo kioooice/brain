@@ -86,6 +86,8 @@ export function App() {
   const [snapshot, setSnapshot] = useState<WorkbenchSnapshot | null>(null);
   const [bundleEntriesByItem, setBundleEntriesByItem] = useState<Record<number, BundleEntry[]>>({});
   const [dropError, setDropError] = useState("");
+  const [clipboardWatcherRunning, setClipboardWatcherRunning] = useState(false);
+  const [clipboardCaptureBoxId, setClipboardCaptureBoxId] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pendingDeleteItems, setPendingDeleteItems] = useState<Record<number, Item>>({});
   const nextToastIdRef = useRef(1);
@@ -103,11 +105,36 @@ export function App() {
       if (active) {
         setSnapshot(loadedSnapshot);
       }
+      const defaultBoxId = loadedSnapshot.boxes[0]?.id ?? null;
+      if (defaultBoxId != null) {
+        void window.brainDesktop.setClipboardCaptureBox(defaultBoxId).then((status) => {
+          if (active) {
+            setClipboardCaptureBoxId(status.boxId);
+          }
+        });
+      }
+    });
+
+    window.brainDesktop.getClipboardWatcherStatus().then((status) => {
+      if (active) {
+        setClipboardWatcherRunning(status.running);
+      }
     });
 
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      window.brainDesktop
+        .getClipboardWatcherStatus()
+        .then((status) => setClipboardWatcherRunning(status.running))
+        .catch(() => undefined);
+    }, 3000);
+
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -378,6 +405,17 @@ export function App() {
     );
     const nextSnapshot = await window.brainDesktop.selectBox(boxId);
     setSnapshot(nextSnapshot);
+  }
+
+  async function handleToggleClipboardWatcher() {
+    const status = await window.brainDesktop.setClipboardWatcherEnabled(!clipboardWatcherRunning);
+    setClipboardWatcherRunning(status.running);
+  }
+
+  async function handleSetClipboardCaptureBox(boxId: number) {
+    setClipboardCaptureBoxId(boxId);
+    const status = await window.brainDesktop.setClipboardCaptureBox(boxId);
+    setClipboardCaptureBoxId(status.boxId);
   }
 
   async function handleCreateBox(name: string) {
@@ -747,6 +785,10 @@ export function App() {
         onLoadBundleEntries={handleLoadBundleEntries}
         bundleEntriesByItem={bundleEntriesByItem}
         dropError={dropError}
+        clipboardWatcherRunning={clipboardWatcherRunning}
+        clipboardCaptureBoxId={clipboardCaptureBoxId ?? visibleSnapshot.boxes[0]?.id ?? null}
+        onToggleClipboardWatcher={handleToggleClipboardWatcher}
+        onSetClipboardCaptureBox={handleSetClipboardCaptureBox}
       />
       {toasts.length ? (
         <div className="toast-stack" aria-live="polite" aria-label="工作台通知">

@@ -19,6 +19,24 @@ python app.py
 
 启动后访问 [http://localhost:5001](http://localhost:5001)。
 
+## Desktop 桌面版
+
+桌面版是当前主方向：本地零摩擦收集工作台，数据存储在 Electron `userData` 目录下的
+`brain-desktop.db`。
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+常用入口：
+
+- `Ctrl+Shift+B`：从任意软件收集当前剪贴板文本、链接或图片。
+- `Ctrl+Alt+B`：开启或关闭剪贴板自动监听。
+- 托盘菜单：立即收集剪贴板、开启/关闭自动监听、打开主窗口、退出。
+- 当前选中盒子会作为默认收集目标；没有选中盒子时进入默认收件箱。
+
 ## 开发模式
 
 如果你还在频繁改代码或模板，直接双击 [dev.bat](/D:/02-Projects/brain/dev.bat) 就行。
