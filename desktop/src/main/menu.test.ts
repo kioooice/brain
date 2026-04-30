@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildApplicationMenuTemplate, shouldShowNativeMenu } from "./menu";
 
 describe("buildApplicationMenuTemplate", () => {
@@ -8,10 +8,9 @@ describe("buildApplicationMenuTemplate", () => {
   });
 
   it("builds a Chinese application menu for Windows", () => {
-    const onToggleSimpleMode = vi.fn();
-    const template = buildApplicationMenuTemplate("Brain Desktop", "win32", { onToggleSimpleMode });
+    const template = buildApplicationMenuTemplate("Brain Desktop", "win32");
 
-    expect(template.map((item) => item.label)).toEqual(["文件", "编辑", "视图", "窗口", "帮助", "简易模式"]);
+    expect(template.map((item) => item.label)).toEqual(["文件", "编辑", "视图", "窗口", "帮助"]);
     expect(template[0].submenu).toEqual(
       expect.arrayContaining([expect.objectContaining({ label: "退出", role: "quit" })])
     );
@@ -26,20 +25,5 @@ describe("buildApplicationMenuTemplate", () => {
         expect.objectContaining({ label: "切换全屏", role: "togglefullscreen" }),
       ])
     );
-    expect(template[5]).toEqual(expect.objectContaining({ label: "简易模式" }));
-
-    template[5].click?.({} as never, {} as never, {} as never);
-    expect(onToggleSimpleMode).toHaveBeenCalledWith(true);
-  });
-
-  it("toggles simple mode off when the top-level menu is clicked in simple mode", () => {
-    const onToggleSimpleMode = vi.fn();
-    const template = buildApplicationMenuTemplate("Brain Desktop", "win32", {
-      simpleMode: true,
-      onToggleSimpleMode,
-    });
-
-    template[5].click?.({} as never, {} as never, {} as never);
-    expect(onToggleSimpleMode).toHaveBeenCalledWith(false);
   });
 });

@@ -24,11 +24,7 @@ import { registerIpc } from "./ipc";
 function createStoreDouble() {
   return {
     getWorkbenchSnapshot: vi.fn(),
-    setSimpleMode: vi.fn(),
-    setSimpleModeView: vi.fn(),
-    moveFloatingBall: vi.fn(),
     setAlwaysOnTop: vi.fn(),
-    setFloatingBallBounds: vi.fn(),
     captureTextOrLink: vi.fn(),
     captureTextOrLinkIntoBox: vi.fn(),
     captureImageData: vi.fn(),
@@ -39,6 +35,7 @@ function createStoreDouble() {
     updateBox: vi.fn(),
     reorderBox: vi.fn(),
     deleteBox: vi.fn(),
+    clearBoxItems: vi.fn(),
     deleteItem: vi.fn(),
     updateItemTitle: vi.fn(),
     removeBundleEntry: vi.fn(),
@@ -77,24 +74,6 @@ describe("registerIpc", () => {
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.selectBox, expect.any(Function));
   });
 
-  it("registers the simple mode handler", () => {
-    registerIpc(createStoreDouble());
-
-    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setSimpleMode, expect.any(Function));
-  });
-
-  it("registers the simple mode view handler", () => {
-    registerIpc(createStoreDouble());
-
-    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setSimpleModeView, expect.any(Function));
-  });
-
-  it("registers the floating ball move handler", () => {
-    registerIpc(createStoreDouble());
-
-    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.moveFloatingBall, expect.any(Function));
-  });
-
   it("registers the always-on-top handler", () => {
     registerIpc(createStoreDouble());
 
@@ -118,6 +97,7 @@ describe("registerIpc", () => {
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.updateBox, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.reorderBox, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.deleteBox, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.clearBoxItems, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.deleteItem, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.updateItemTitle, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.removeBundleEntry, expect.any(Function));

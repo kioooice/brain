@@ -7,6 +7,7 @@ export type Box = {
 };
 
 export type ItemKind = "text" | "link" | "image" | "file" | "bundle";
+export type ClearBoxItemsKind = "all" | ItemKind;
 
 export type Item = {
   id: number;

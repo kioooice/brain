@@ -2,14 +2,19 @@ import Database from "better-sqlite3";
 import * as fs from "node:fs";
 import { basename, extname } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Box, BundleEntry, Item, SimpleModeView, WindowBounds, WorkbenchSnapshot } from "../shared/types";
+import type {
+  Box,
+  BundleEntry,
+  ClearBoxItemsKind,
+  Item,
+  SimpleModeView,
+  WindowBounds,
+  WorkbenchSnapshot,
+} from "../shared/types";
 
 export type DesktopStore = {
   getWorkbenchSnapshot: () => WorkbenchSnapshot;
-  setSimpleMode: (enabled: boolean) => WorkbenchSnapshot;
-  setSimpleModeView: (view: SimpleModeView) => WorkbenchSnapshot;
   setAlwaysOnTop: (enabled: boolean) => WorkbenchSnapshot;
-  setFloatingBallBounds: (bounds: WindowBounds) => WorkbenchSnapshot;
   captureTextOrLink: (input: string) => WorkbenchSnapshot;
   captureTextOrLinkIntoBox: (input: string, boxId: number) => WorkbenchSnapshot;
   captureImageData: (dataUrl: string, title?: string) => WorkbenchSnapshot;
@@ -20,6 +25,7 @@ export type DesktopStore = {
   updateBox: (boxId: number, name: string, description: string) => WorkbenchSnapshot | null;
   reorderBox: (boxId: number, direction: "up" | "down") => WorkbenchSnapshot;
   deleteBox: (boxId: number) => WorkbenchSnapshot;
+  clearBoxItems: (boxId: number, kind: ClearBoxItemsKind) => WorkbenchSnapshot;
   deleteItem: (itemId: number) => WorkbenchSnapshot;
   updateItemTitle: (itemId: number, title: string) => WorkbenchSnapshot | null;
   removeBundleEntry: (bundleItemId: number, entryPath: string) => WorkbenchSnapshot;
@@ -489,30 +495,6 @@ export function createStore(filename: string): DesktopStore {
 
   return {
     getWorkbenchSnapshot: readWorkbenchSnapshot,
-    setSimpleMode(enabled: boolean): WorkbenchSnapshot {
-      const panelState = getPanelStateDefaults();
-      writePanelState(
-        panelState.selectedBoxId,
-        panelState.quickPanelOpen,
-        enabled,
-        panelState.alwaysOnTop,
-        "ball",
-        panelState.floatingBallBounds
-      );
-      return readWorkbenchSnapshot();
-    },
-    setSimpleModeView(view: SimpleModeView): WorkbenchSnapshot {
-      const panelState = getPanelStateDefaults();
-      writePanelState(
-        panelState.selectedBoxId,
-        panelState.quickPanelOpen,
-        panelState.simpleMode,
-        panelState.alwaysOnTop,
-        view,
-        panelState.floatingBallBounds
-      );
-      return readWorkbenchSnapshot();
-    },
     setAlwaysOnTop(enabled: boolean): WorkbenchSnapshot {
       const panelState = getPanelStateDefaults();
       writePanelState(
@@ -522,18 +504,6 @@ export function createStore(filename: string): DesktopStore {
         enabled,
         panelState.simpleModeView,
         panelState.floatingBallBounds
-      );
-      return readWorkbenchSnapshot();
-    },
-    setFloatingBallBounds(bounds: WindowBounds): WorkbenchSnapshot {
-      const panelState = getPanelStateDefaults();
-      writePanelState(
-        panelState.selectedBoxId,
-        panelState.quickPanelOpen,
-        panelState.simpleMode,
-        panelState.alwaysOnTop,
-        panelState.simpleModeView,
-        bounds
       );
       return readWorkbenchSnapshot();
     },
@@ -657,6 +627,56 @@ export function createStore(filename: string): DesktopStore {
         panelState.floatingBallBounds
       );
 
+      return readWorkbenchSnapshot();
+    },
+    clearBoxItems(boxId: number, kind: ClearBoxItemsKind): WorkbenchSnapshot {
+      const snapshot = readWorkbenchSnapshot();
+      if (!snapshot.boxes.some((box) => box.id === boxId)) {
+        return snapshot;
+      }
+
+      const boxItems = snapshot.items.filter((item) => item.boxId === boxId);
+      const deleteBundleEntries = db.prepare("delete from bundle_entries where bundle_item_id = ?");
+      const deleteItemStatement = db.prepare("delete from items where id = ?");
+
+      if (kind === "all") {
+        boxItems.forEach((item) => {
+          deleteBundleEntries.run(item.id);
+          deleteItemStatement.run(item.id);
+        });
+        return readWorkbenchSnapshot();
+      }
+
+      if (kind === "bundle") {
+        const bundleItems = boxItems.filter((item) => item.kind === "bundle");
+        bundleItems.forEach((bundleItem) => {
+          const childItems = boxItems.filter((item) => item.bundleParentId === bundleItem.id);
+          childItems.forEach((childItem) => {
+            deleteBundleEntries.run(childItem.id);
+            deleteItemStatement.run(childItem.id);
+          });
+          deleteBundleEntries.run(bundleItem.id);
+          deleteItemStatement.run(bundleItem.id);
+        });
+        normalizeItemSortOrders(boxId);
+        return readWorkbenchSnapshot();
+      }
+
+      const affectedBundleIds = new Set<number>();
+      boxItems
+        .filter((item) => item.kind === kind)
+        .forEach((item) => {
+          if (item.bundleParentId != null) {
+            affectedBundleIds.add(item.bundleParentId);
+          }
+          deleteBundleEntries.run(item.id);
+          deleteItemStatement.run(item.id);
+        });
+
+      affectedBundleIds.forEach((bundleItemId) => {
+        dissolveBundleIfNeeded(bundleItemId);
+      });
+      normalizeItemSortOrders(boxId);
       return readWorkbenchSnapshot();
     },
     deleteItem(itemId: number): WorkbenchSnapshot {

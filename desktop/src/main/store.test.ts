@@ -571,37 +571,6 @@ describe("createStore", () => {
     expect(snapshot.items).toEqual([]);
   });
 
-  it("persists simple mode in panel state", () => {
-    const store = createStore("brain-desktop.db");
-
-    const updated = store.setSimpleMode(true);
-
-    expect(updated.panelState.simpleMode).toBe(true);
-    expect(updated.panelState.simpleModeView).toBe("ball");
-    expect(store.getWorkbenchSnapshot().panelState.simpleMode).toBe(true);
-  });
-
-  it("resets simple mode view back to ball when leaving simple mode", () => {
-    const store = createStore("brain-desktop.db");
-
-    store.setSimpleMode(true);
-    store.setSimpleModeView("panel");
-    const updated = store.setSimpleMode(false);
-
-    expect(updated.panelState.simpleMode).toBe(false);
-    expect(updated.panelState.simpleModeView).toBe("ball");
-  });
-
-  it("persists box detail mode in panel state", () => {
-    const store = createStore("brain-desktop.db");
-
-    store.setSimpleMode(true);
-    const updated = store.setSimpleModeView("box");
-
-    expect(updated.panelState.simpleModeView).toBe("box");
-    expect(store.getWorkbenchSnapshot().panelState.simpleModeView).toBe("box");
-  });
-
   it("persists always-on-top in panel state", () => {
     const store = createStore("brain-desktop.db");
 
@@ -862,6 +831,24 @@ describe("createStore", () => {
     const after = store.deleteBox(before.boxes[0].id);
 
     expect(after).toEqual(before);
+  });
+
+  it("clears only the requested item kind from one box", () => {
+    const store = createStore("brain-desktop.db");
+    const brand = store.createBox("Brand");
+    const inboxBoxId = brand.boxes.find((box) => box.name === "收件箱")?.id ?? 0;
+    const brandBoxId = brand.boxes.find((box) => box.name === "Brand")?.id ?? 0;
+
+    store.captureTextOrLinkIntoBox("https://example.com/inbox", inboxBoxId);
+    store.captureTextOrLinkIntoBox("Brand note", brandBoxId);
+    store.captureTextOrLinkIntoBox("https://example.com/brand", brandBoxId);
+
+    const cleared = store.clearBoxItems(brandBoxId, "link");
+
+    expect(cleared.items.map((item) => ({ boxId: item.boxId, kind: item.kind, title: item.title }))).toEqual([
+      { boxId: inboxBoxId, kind: "link", title: "https://example.com/inbox" },
+      { boxId: brandBoxId, kind: "text", title: "Brand note" },
+    ]);
   });
 
   it("creates an image item in the specified box from one dropped image path", () => {

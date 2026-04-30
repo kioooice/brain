@@ -1,8 +1,6 @@
 import { Menu, nativeImage } from "electron";
 import type { MenuItemConstructorOptions, NativeImage } from "electron";
 
-export type WindowMode = "main" | "simple";
-
 export function shouldHideWindowToTray(isQuitting: boolean) {
   return !isQuitting;
 }
@@ -12,7 +10,6 @@ export function buildTrayMenuTemplate(options: {
   onCaptureClipboard?: () => void;
   onToggleClipboardWatcher?: () => void;
   onOpenMain: () => void;
-  onOpenSimple: () => void;
   onQuit: () => void;
 }): MenuItemConstructorOptions[] {
   return [
@@ -32,10 +29,6 @@ export function buildTrayMenuTemplate(options: {
       click: options.onOpenMain,
     },
     {
-      label: "打开简易模式",
-      click: options.onOpenSimple,
-    },
-    {
       type: "separator",
     },
     {
@@ -50,7 +43,6 @@ export function buildTrayMenu(options: {
   onCaptureClipboard?: () => void;
   onToggleClipboardWatcher?: () => void;
   onOpenMain: () => void;
-  onOpenSimple: () => void;
   onQuit: () => void;
 }) {
   return Menu.buildFromTemplate(buildTrayMenuTemplate(options));

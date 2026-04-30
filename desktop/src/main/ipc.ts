@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { clipboard, dialog, ipcMain, shell } from "electron";
 import { IPC_CHANNELS } from "../shared/ipc";
-import type { SimpleModeView, WorkbenchSnapshot } from "../shared/types";
+import type { ClearBoxItemsKind, WorkbenchSnapshot } from "../shared/types";
 import {
   captureClipboardNow,
   getClipboardCaptureBoxId,
@@ -43,34 +43,10 @@ function getClipboardCaptureBoxStatus(store: DesktopStore) {
 export function registerIpc(
   store: DesktopStore,
   options: {
-    onSetSimpleMode?: (enabled: boolean, senderWindowId?: number) => void;
-    onSetSimpleModeView?: (view: SimpleModeView, senderWindowId?: number) => void;
-    onMoveFloatingBall?: (deltaX: number, deltaY: number, senderWindowId?: number) => void;
     onSetAlwaysOnTop?: (enabled: boolean, senderWindowId?: number) => WorkbenchSnapshot | void;
   } = {}
 ) {
   ipcMain.handle(IPC_CHANNELS.bootstrap, () => store.getWorkbenchSnapshot());
-  ipcMain.handle(IPC_CHANNELS.setSimpleMode, (event, enabled: boolean) => {
-    if (options.onSetSimpleMode) {
-      options.onSetSimpleMode(enabled, event.sender.id);
-      return;
-    }
-
-    store.setSimpleMode(enabled);
-  });
-  ipcMain.handle(IPC_CHANNELS.setSimpleModeView, (event, view: SimpleModeView) => {
-    if (options.onSetSimpleModeView) {
-      options.onSetSimpleModeView(view, event.sender.id);
-      return;
-    }
-
-    store.setSimpleModeView(view);
-  });
-  ipcMain.handle(IPC_CHANNELS.moveFloatingBall, (event, deltaX: number, deltaY: number) => {
-    if (options.onMoveFloatingBall) {
-      options.onMoveFloatingBall(deltaX, deltaY, event.sender.id);
-    }
-  });
   ipcMain.handle(IPC_CHANNELS.setAlwaysOnTop, (event, enabled: boolean) => {
     if (options.onSetAlwaysOnTop) {
       const snapshot = options.onSetAlwaysOnTop(enabled, event.sender.id);
@@ -119,6 +95,9 @@ export function registerIpc(
     store.reorderBox(boxId, direction)
   );
   ipcMain.handle(IPC_CHANNELS.deleteBox, (_event, boxId: number) => store.deleteBox(boxId));
+  ipcMain.handle(IPC_CHANNELS.clearBoxItems, (_event, boxId: number, kind: ClearBoxItemsKind) =>
+    store.clearBoxItems(boxId, kind)
+  );
   ipcMain.handle(IPC_CHANNELS.deleteItem, (_event, itemId: number) => store.deleteItem(itemId));
   ipcMain.handle(IPC_CHANNELS.updateItemTitle, (_event, itemId: number, title: string) =>
     store.updateItemTitle(itemId, title)

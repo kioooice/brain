@@ -7,11 +7,7 @@ export function shouldShowNativeMenu(isPackaged = false) {
 
 export function buildApplicationMenuTemplate(
   productName = "Brain Desktop",
-  platform = process.platform,
-  options: {
-    simpleMode?: boolean;
-    onToggleSimpleMode?: (enabled: boolean) => void;
-  } = {}
+  platform = process.platform
 ): MenuItemConstructorOptions[] {
   const isMac = platform === "darwin";
 
@@ -57,19 +53,13 @@ export function buildApplicationMenuTemplate(
       label: "帮助",
       submenu: [{ label: `关于 ${productName}`, enabled: false }],
     },
-    {
-      label: "简易模式",
-      click: () => options.onToggleSimpleMode?.(!options.simpleMode),
-    },
   ];
 }
 
 export function installApplicationMenu(
   productName = "Brain Desktop",
   options: {
-    simpleMode?: boolean;
     showNativeMenu?: boolean;
-    onToggleSimpleMode?: (enabled: boolean) => void;
   } = {}
 ) {
   if (options.showNativeMenu === false) {
@@ -77,6 +67,6 @@ export function installApplicationMenu(
     return;
   }
 
-  const menu = Menu.buildFromTemplate(buildApplicationMenuTemplate(productName, process.platform, options));
+  const menu = Menu.buildFromTemplate(buildApplicationMenuTemplate(productName, process.platform));
   Menu.setApplicationMenu(menu);
 }

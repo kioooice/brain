@@ -1,5 +1,5 @@
 import { DragEvent, type CSSProperties, type SyntheticEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Box, BundleEntry, Item, ItemKind } from "../shared/types";
+import type { Box, BundleEntry, ClearBoxItemsKind, Item, ItemKind } from "../shared/types";
 
 const DRAGGED_ITEM_MIME = "application/x-brain-item-id";
 const MASONRY_ROW_HEIGHT = 8;
@@ -12,6 +12,7 @@ const KIND_FILTER_OPTIONS: Array<{ value: "all" | ItemKind; label: string }> = [
   { value: "file", label: "文件" },
   { value: "bundle", label: "组合" },
 ];
+const CLEAR_KIND_OPTIONS: Array<{ value: ClearBoxItemsKind; label: string }> = KIND_FILTER_OPTIONS;
 
 let transparentDragImage: HTMLImageElement | null = null;
 
@@ -48,6 +49,22 @@ function getItemKindLabel(kind: ItemKind) {
     default:
       return kind;
   }
+}
+
+function getLocalDateValue(isoValue: string) {
+  if (!isoValue.trim()) {
+    return "";
+  }
+
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getBundleEntryKindLabel(kind: BundleEntry["entryKind"]) {
@@ -580,6 +597,7 @@ type MainCanvasProps = {
   onBackToWorkspace?: () => void;
   onPreviewImage?: (item: Item) => void;
   onRenameBox?: (boxId: number, name: string, description: string) => Promise<void>;
+  onClearBoxItems?: (boxId: number, kind: ClearBoxItemsKind) => Promise<void>;
   onRenameItem?: (itemId: number, title: string) => Promise<void>;
   onRemoveBundleEntry?: (itemId: number, entryPath: string) => Promise<void>;
   onGroupItems?: (sourceItemId: number, targetItemId: number) => Promise<void>;
@@ -599,6 +617,7 @@ export function MainCanvas({
   onBackToWorkspace,
   onPreviewImage = () => undefined,
   onRenameBox = async () => undefined,
+  onClearBoxItems = async () => undefined,
   onRenameItem = async () => undefined,
   onGroupItems = async () => undefined,
   onOpenPath = async () => undefined,
@@ -621,19 +640,28 @@ export function MainCanvas({
   const [titleDraft, setTitleDraft] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | ItemKind>("all");
+  const [dateFilter, setDateFilter] = useState("");
+  const [clearKind, setClearKind] = useState<ClearBoxItemsKind>("all");
   const [selectionModeItemId, setSelectionModeItemId] = useState<number | null>(null);
   const [previewedBundleItem, setPreviewedBundleItem] = useState<Item | null>(null);
   const [extractedBundleItemId, setExtractedBundleItemId] = useState<number | null>(null);
   const stackRefs = useRef(new Map<number, HTMLDivElement>());
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
-  const hasActiveFilters = normalizedQuery.length > 0 || kindFilter !== "all";
+  const hasActiveFilters = normalizedQuery.length > 0 || kindFilter !== "all" || Boolean(dateFilter);
 
   const filteredItems = useMemo(
     () =>
       items.filter((item) => {
         if (kindFilter !== "all" && item.kind !== kindFilter) {
           return false;
+        }
+
+        if (dateFilter) {
+          const itemDate = getLocalDateValue(item.createdAt);
+          if (itemDate !== dateFilter) {
+            return false;
+          }
         }
 
         if (!normalizedQuery) {
@@ -647,7 +675,7 @@ export function MainCanvas({
 
         return searchableText.includes(normalizedQuery);
       }),
-    [items, kindFilter, normalizedQuery]
+    [dateFilter, items, kindFilter, normalizedQuery]
   );
   const bundledItemIds = useMemo(
     () =>
@@ -1005,6 +1033,25 @@ export function MainCanvas({
     setEditingBoxName(false);
   }
 
+  async function handleClearBoxItems() {
+    if (!box) {
+      return;
+    }
+
+    const selectedOption = CLEAR_KIND_OPTIONS.find((option) => option.value === clearKind);
+    const label = selectedOption?.label ?? "全部";
+    const message =
+      clearKind === "all"
+        ? `确定清空「${box.name}」里的全部卡片吗？`
+        : `确定清空「${box.name}」里的${label}卡片吗？`;
+
+    if (!window.confirm(message)) {
+      return;
+    }
+
+    await onClearBoxItems(box.id, clearKind);
+  }
+
   const extractedBundleItem =
     extractedBundleItemId != null ? items.find((entry) => entry.id === extractedBundleItemId) ?? null : null;
   const extractedBundleItems = extractedBundleItem ? bundleItemsByItem[extractedBundleItem.id] ?? [] : [];
@@ -1201,19 +1248,6 @@ export function MainCanvas({
       <div className="canvas-topbar">
         <header className="canvas-header">
           <div className="canvas-header-copy">
-            <div className="canvas-header-kicker">
-              {onBackToWorkspace ? (
-                <button
-                  type="button"
-                  className="canvas-back-button"
-                  aria-label="返回主界面"
-                  onClick={onBackToWorkspace}
-                >
-                  返回主界面
-                </button>
-              ) : null}
-              <p className="eyebrow">当前盒子</p>
-            </div>
             {editingBoxName && box ? (
               <form
                 className="canvas-box-rename-form"
@@ -1261,25 +1295,72 @@ export function MainCanvas({
             ) : (
               <h1>未选择盒子</h1>
             )}
-          </div>
-          <div className="canvas-header-side">
-            <p className="canvas-meta">
-              {hasActiveFilters ? `${filteredItems.length} / ${items.length}` : items.length} 张卡片
-            </p>
+            <label className="canvas-filter-field canvas-search-field">
+              <span className="canvas-filter-label">搜索</span>
+              <input
+                className="canvas-filter-input"
+                aria-label="筛选当前盒子"
+                placeholder="搜索标题、内容或路径"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </label>
           </div>
         </header>
+        <div className="canvas-topbar-meta">
+          <p className="canvas-meta">
+            {hasActiveFilters ? `${filteredItems.length} / ${items.length}` : items.length} 张卡片
+          </p>
+          {onBackToWorkspace ? (
+            <button
+              type="button"
+              className="canvas-back-button"
+              aria-label="返回主界面"
+              onClick={onBackToWorkspace}
+            >
+              返回
+            </button>
+          ) : null}
+        </div>
 
         <div className="canvas-toolbar" aria-label="当前盒子筛选">
-          <label className="canvas-filter-field">
-            <span className="canvas-filter-label">搜索</span>
-            <input
-              className="canvas-filter-input"
-              aria-label="筛选当前盒子"
-              placeholder="搜索标题、内容或路径"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </label>
+          <div className="canvas-clear-field" aria-label="清空当前盒子">
+            <label className="canvas-clear-select-label">
+              <span className="canvas-filter-label">清空</span>
+              <select
+                className="canvas-clear-select"
+                aria-label="选择清空类型"
+                value={clearKind}
+                onChange={(event) => setClearKind(event.target.value as ClearBoxItemsKind)}
+              >
+                {CLEAR_KIND_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="card-action-button destructive canvas-clear-button"
+              onClick={() => void handleClearBoxItems()}
+              disabled={!box || items.length === 0}
+            >
+              清空盒子
+            </button>
+          </div>
+          <div className="canvas-date-filter-field" aria-label="按日期筛选当前盒子">
+            <label className="canvas-date-input-label">
+              <span className="canvas-filter-label">日期</span>
+              <input
+                className="canvas-date-input"
+                aria-label="筛选日期"
+                type="date"
+                value={dateFilter}
+                onChange={(event) => setDateFilter(event.target.value)}
+              />
+            </label>
+          </div>
           <div className="canvas-filter-field canvas-filter-kind" aria-label="筛选卡片类型">
             <span className="canvas-filter-label">类型</span>
             <div className="canvas-filter-pills" role="group" aria-label="筛选卡片类型选项">

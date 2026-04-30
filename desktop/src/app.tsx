@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "./components/app-shell";
 import { IPC_CHANNELS } from "./shared/ipc";
-import type { BundleEntry, Item, WorkbenchSnapshot } from "./shared/types";
+import type { BundleEntry, ClearBoxItemsKind, Item, WorkbenchSnapshot } from "./shared/types";
 
 type Toast = {
   id: number;
@@ -16,41 +16,6 @@ const DELETE_COMMIT_DELAY_MS = 4000;
 
 function isMissingIpcHandlerError(cause: unknown, channel: string) {
   return cause instanceof Error && cause.message.includes(`No handler registered for '${channel}'`);
-}
-
-function extractClipboardImageFile(clipboardData: DataTransfer | null | undefined) {
-  const item = Array.from(clipboardData?.items ?? []).find(
-    (entry) => entry.kind === "file" && entry.type.startsWith("image/")
-  );
-  return item?.getAsFile() ?? null;
-}
-
-function shouldIgnorePasteTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target.isContentEditable
-  );
-}
-
-function readBlobAsDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("读取图片失败"));
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      if (!result) {
-        reject(new Error("读取图片失败"));
-        return;
-      }
-      resolve(result);
-    };
-    reader.readAsDataURL(blob);
-  });
 }
 
 function deriveImageTitleFromUrl(url: string) {
@@ -136,78 +101,6 @@ export function App() {
 
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (
-      !snapshot?.panelState.simpleMode ||
-      (snapshot.panelState.simpleModeView !== "panel" && snapshot.panelState.simpleModeView !== "box")
-    ) {
-      return;
-    }
-
-    function handleExitSimpleMode(event: KeyboardEvent) {
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      event.preventDefault();
-      void window.brainDesktop.setSimpleMode(false);
-    }
-
-    window.addEventListener("keydown", handleExitSimpleMode);
-    return () => {
-      window.removeEventListener("keydown", handleExitSimpleMode);
-    };
-  }, [snapshot?.panelState.simpleMode]);
-
-  useEffect(() => {
-    if (
-      !snapshot?.panelState.simpleMode ||
-      (snapshot.panelState.simpleModeView !== "panel" && snapshot.panelState.simpleModeView !== "box")
-    ) {
-      return;
-    }
-
-    async function handleSimpleModePaste(event: ClipboardEvent) {
-      if (event.defaultPrevented || shouldIgnorePasteTarget(event.target)) {
-        return;
-      }
-
-      const imageFile = extractClipboardImageFile(event.clipboardData);
-      if (!imageFile) {
-        return;
-      }
-
-      const targetBoxId = snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null;
-      if (!targetBoxId) {
-        return;
-      }
-
-      event.preventDefault();
-      setDropError("");
-
-      try {
-        const dataUrl = await readBlobAsDataUrl(imageFile);
-        const nextSnapshot = await window.brainDesktop.captureImageDataIntoBox(
-          dataUrl,
-          imageFile.name || "粘贴图片",
-          targetBoxId
-        );
-        setSnapshot(nextSnapshot);
-      } catch (cause) {
-        pushToast({
-          message:
-            cause instanceof Error ? cause.message : "图片粘贴失败",
-          tone: "error",
-        });
-      }
-    }
-
-    window.addEventListener("paste", handleSimpleModePaste);
-    return () => {
-      window.removeEventListener("paste", handleSimpleModePaste);
-    };
-  }, [snapshot]);
 
   useEffect(() => {
     pendingDeleteItemsRef.current = pendingDeleteItems;
@@ -448,18 +341,6 @@ export function App() {
     }
   }
 
-  async function handleReorderBox(boxId: number, direction: "up" | "down") {
-    try {
-      const nextSnapshot = await window.brainDesktop.reorderBox(boxId, direction);
-      setSnapshot(nextSnapshot);
-    } catch (cause) {
-      pushToast({
-        message: cause instanceof Error ? cause.message : "盒子排序失败",
-        tone: "error",
-      });
-    }
-  }
-
   async function handleDeleteBox(boxId: number) {
     try {
       const sourceSnapshot = snapshotRef.current ?? snapshot;
@@ -488,6 +369,30 @@ export function App() {
     } catch (cause) {
       pushToast({
         message: cause instanceof Error ? cause.message : "删除盒子失败",
+        tone: "error",
+      });
+    }
+  }
+
+  async function handleClearBoxItems(boxId: number, kind: ClearBoxItemsKind) {
+    try {
+      const nextSnapshot = await window.brainDesktop.clearBoxItems(boxId, kind);
+      setSnapshot(nextSnapshot);
+      setBundleEntriesByItem((current) => {
+        const remainingItemIds = new Set(nextSnapshot.items.map((item) => item.id));
+        const next = { ...current };
+        Object.keys(next).forEach((itemId) => {
+          if (!remainingItemIds.has(Number(itemId))) {
+            delete next[Number(itemId)];
+          }
+        });
+        return next;
+      });
+      const boxName = nextSnapshot.boxes.find((box) => box.id === boxId)?.name ?? "当前盒子";
+      pushToast({ message: `已清空 ${boxName}` });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "清空盒子失败",
         tone: "error",
       });
     }
@@ -660,51 +565,6 @@ export function App() {
     }
   }
 
-  async function handleMoveItemsToBox(itemIds: number[], boxId: number) {
-    try {
-      const sourceSnapshot = snapshotRef.current;
-      if (!sourceSnapshot) {
-        return;
-      }
-
-      const movableIds = itemIds.filter((itemId) => {
-        const item = sourceSnapshot.items.find((entry) => entry.id === itemId);
-        return item && item.boxId !== boxId;
-      });
-
-      if (movableIds.length === 0) {
-        return;
-      }
-
-      let nextSnapshot: WorkbenchSnapshot | null = sourceSnapshot;
-      for (const itemId of movableIds) {
-        nextSnapshot = await window.brainDesktop.moveItemToBox(itemId, boxId);
-      }
-
-      if (!nextSnapshot) {
-        return;
-      }
-
-      setSnapshot(nextSnapshot);
-      const boxName = nextSnapshot.boxes.find((box) => box.id === boxId)?.name ?? "目标盒子";
-      pushToast({
-        message:
-          movableIds.length === 1
-            ? `已移动到 ${boxName}`
-            : `已将 ${movableIds.length} 张卡片移动到 ${boxName}`,
-      });
-    } catch (cause) {
-      pushToast({
-        message: cause instanceof Error ? cause.message : "移动失败",
-        tone: "error",
-      });
-    }
-  }
-
-  async function handleMoveItemToBox(itemId: number, boxId: number) {
-    await handleMoveItemsToBox([itemId], boxId);
-  }
-
   async function handleMoveItemToIndex(itemId: number, targetIndex: number) {
     try {
       const nextSnapshot = await window.brainDesktop.moveItemToIndex(itemId, targetIndex);
@@ -715,22 +575,6 @@ export function App() {
         tone: "error",
       });
     }
-  }
-
-  async function handleExitSimpleMode() {
-    await window.brainDesktop.setSimpleMode(false);
-  }
-
-  async function handleEnterSimpleMode() {
-    await window.brainDesktop.setSimpleMode(true);
-  }
-
-  async function handleSetSimpleModeView(view: "ball" | "panel") {
-    await window.brainDesktop.setSimpleModeView(view);
-  }
-
-  async function handleMoveFloatingBall(deltaX: number, deltaY: number) {
-    await window.brainDesktop.moveFloatingBall(deltaX, deltaY);
   }
 
   async function handleLoadBundleEntries(itemId: number) {
@@ -756,10 +600,6 @@ export function App() {
       <AppShell
         snapshot={visibleSnapshot}
         onQuickCapture={handleQuickCapture}
-        onEnterSimpleMode={handleEnterSimpleMode}
-        onExitSimpleMode={handleExitSimpleMode}
-        onSetSimpleModeView={handleSetSimpleModeView}
-        onMoveFloatingBall={handleMoveFloatingBall}
         onSelectBox={handleSelectBox}
         onDropPaths={handleDroppedPaths}
         onDropText={handleQuickCapture}
@@ -770,8 +610,8 @@ export function App() {
         onPasteImage={handlePasteImage}
         onCreateBox={handleCreateBox}
         onRenameBox={handleRenameBox}
-        onReorderBox={handleReorderBox}
         onDeleteBox={handleDeleteBox}
+        onClearBoxItems={handleClearBoxItems}
         onDeleteItem={handleDeleteItem}
         onRenameItem={handleRenameItem}
         onRemoveBundleEntry={handleRemoveBundleEntry}
@@ -780,7 +620,6 @@ export function App() {
         onCopyText={handleCopyText}
         onExportBundleAi={handleExportBundleAi}
         onGroupItems={handleGroupItems}
-        onMoveItemToBox={handleMoveItemToBox}
         onMoveItemToIndex={handleMoveItemToIndex}
         onLoadBundleEntries={handleLoadBundleEntries}
         bundleEntriesByItem={bundleEntriesByItem}

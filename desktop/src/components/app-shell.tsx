@@ -1,12 +1,11 @@
-import type { BundleEntry, WorkbenchSnapshot } from "../shared/types";
+import type { BundleEntry, ClearBoxItemsKind, WorkbenchSnapshot } from "../shared/types";
 import { resolveDroppedFilePaths } from "../dropped-file-paths";
 import { BoxRail } from "./box-rail";
 import { MainCanvas } from "./main-canvas";
 import { WorkspaceDropZone } from "./workspace-drop-zone";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import type { CSSProperties, WheelEvent as ReactWheelEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const FLOATING_BALL_DRAG_THRESHOLD_PX = 6;
 const IMAGE_PREVIEW_MIN_SCALE = 1;
 const IMAGE_PREVIEW_MAX_SCALE = 4;
 const IMAGE_PREVIEW_SCALE_STEP = 0.12;
@@ -86,25 +85,9 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-function getPointerScreenPosition(event: {
-  screenX: number;
-  screenY: number;
-  clientX: number;
-  clientY: number;
-}) {
-  return {
-    x: event.screenX,
-    y: event.screenY,
-  };
-}
-
 type AppShellProps = {
   snapshot: WorkbenchSnapshot;
   onQuickCapture: (input: string) => Promise<void>;
-  onEnterSimpleMode?: () => Promise<void>;
-  onExitSimpleMode?: () => Promise<void>;
-  onSetSimpleModeView?: (view: "ball" | "panel" | "box") => Promise<void>;
-  onMoveFloatingBall?: (deltaX: number, deltaY: number) => Promise<void>;
   onSelectBox?: (boxId: number) => Promise<void>;
   onDropPaths?: (paths: string[]) => Promise<void>;
   onDropText?: (text: string) => Promise<void>;
@@ -115,8 +98,8 @@ type AppShellProps = {
   onPasteImage?: (dataUrl: string, title: string) => Promise<void>;
   onCreateBox?: (name: string) => Promise<void>;
   onRenameBox?: (boxId: number, name: string, description: string) => Promise<void>;
-  onReorderBox?: (boxId: number, direction: "up" | "down") => Promise<void>;
   onDeleteBox?: (boxId: number) => Promise<void>;
+  onClearBoxItems?: (boxId: number, kind: ClearBoxItemsKind) => Promise<void>;
   onDeleteItem?: (itemId: number) => Promise<void>;
   onRenameItem?: (itemId: number, title: string) => Promise<void>;
   onRemoveBundleEntry?: (itemId: number, entryPath: string) => Promise<void>;
@@ -125,7 +108,6 @@ type AppShellProps = {
   onCopyText?: (text: string) => Promise<void>;
   onExportBundleAi?: (bundleName: string, html: string) => Promise<void>;
   onGroupItems?: (sourceItemId: number, targetItemId: number) => Promise<void>;
-  onMoveItemToBox?: (itemId: number, boxId: number) => Promise<void>;
   onMoveItemToIndex?: (itemId: number, targetIndex: number) => Promise<void>;
   onLoadBundleEntries?: (itemId: number) => Promise<void>;
   bundleEntriesByItem?: Record<number, BundleEntry[]>;
@@ -139,10 +121,6 @@ type AppShellProps = {
 export function AppShell({
   snapshot,
   onQuickCapture,
-  onEnterSimpleMode = async () => undefined,
-  onExitSimpleMode = async () => undefined,
-  onSetSimpleModeView = async () => undefined,
-  onMoveFloatingBall = async () => undefined,
   onSelectBox = async () => undefined,
   onDropPaths = async () => undefined,
   onDropText = async () => undefined,
@@ -153,8 +131,8 @@ export function AppShell({
   onPasteImage = async () => undefined,
   onCreateBox = async () => undefined,
   onRenameBox = async () => undefined,
-  onReorderBox = async () => undefined,
   onDeleteBox = async () => undefined,
+  onClearBoxItems = async () => undefined,
   onDeleteItem = async () => undefined,
   onRenameItem = async () => undefined,
   onRemoveBundleEntry = async () => undefined,
@@ -163,7 +141,6 @@ export function AppShell({
   onCopyText = async () => undefined,
   onExportBundleAi = async () => undefined,
   onGroupItems = async () => undefined,
-  onMoveItemToBox = async () => undefined,
   onMoveItemToIndex = async () => undefined,
   onLoadBundleEntries = async () => undefined,
   bundleEntriesByItem = {},
@@ -183,19 +160,8 @@ export function AppShell({
   const [workspaceView, setWorkspaceView] = useState<"home" | "box">("home");
   const [creatingBox, setCreatingBox] = useState(false);
   const [newBoxName, setNewBoxName] = useState("");
-  const floatingBallGestureRef = useRef<{
-    active: boolean;
-    dragged: boolean;
-    originX: number;
-    originY: number;
-    lastX: number;
-    lastY: number;
-  } | null>(null);
-  const suppressFloatingBallClickRef = useRef(false);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const previewImageRef = useRef<HTMLImageElement | null>(null);
-  const simpleMode = Boolean(snapshot.panelState.simpleMode);
-  const simpleModeView = snapshot.panelState.simpleModeView ?? "ball";
   const sortedBoxes = useMemo(
     () =>
       [...snapshot.boxes].sort((left, right) => {
@@ -288,11 +254,6 @@ export function AppShell({
 
   async function openBox(boxId: number) {
     setSelectedBoxId(boxId);
-    if (simpleMode) {
-      await onSelectBox(boxId);
-      await onSetSimpleModeView("box");
-      return;
-    }
     setWorkspaceView("box");
     await onSelectBox(boxId);
   }
@@ -517,15 +478,9 @@ export function AppShell({
           box={currentBox}
           items={currentItems}
           bundleEntriesByItem={bundleEntriesByItem}
-          onBackToWorkspace={() => {
-            if (simpleMode) {
-              void onSetSimpleModeView("panel");
-              return;
-            }
-            setWorkspaceView("home");
-          }}
           onPreviewImage={setPreviewImageItem}
           onRenameBox={onRenameBox}
+          onClearBoxItems={onClearBoxItems}
           onRenameItem={onRenameItem}
           onRemoveBundleEntry={onRemoveBundleEntry}
           onOpenPath={onOpenPath}
@@ -560,13 +515,6 @@ export function AppShell({
           <h2>正式版策略</h2>
           <p>正式打包版会隐藏顶部原生菜单，只保留应用侧栏导航和窗口控制。</p>
         </article>
-        <article className="static-panel-card">
-          <h2>简易模式</h2>
-          <p>简易模式保留为侧栏入口，进入后只显示盒子面板，适合作为桌面悬浮收纳板。</p>
-          <button type="button" className="card-action-button" onClick={() => void onEnterSimpleMode()}>
-            进入简易模式
-          </button>
-        </article>
       </div>
     </section>
   );
@@ -586,7 +534,7 @@ export function AppShell({
         </article>
         <article className="static-panel-card">
           <h2>当前形态</h2>
-          <p>界面采用侧栏导航加主工作区结构，简易模式作为独立的悬浮收纳入口。</p>
+          <p>界面采用侧栏导航加主工作区结构，专注本地盒子、卡片和剪贴板收集。</p>
         </article>
         <article className="static-panel-card">
           <h2>快捷键</h2>
@@ -596,131 +544,23 @@ export function AppShell({
     </section>
   );
 
-  function handleFloatingBallPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const origin = getPointerScreenPosition(event);
-
-    floatingBallGestureRef.current = {
-      active: true,
-      dragged: false,
-      originX: origin.x,
-      originY: origin.y,
-      lastX: origin.x,
-      lastY: origin.y,
-    };
-
-    function handlePointerMove(pointerEvent: PointerEvent) {
-      const gesture = floatingBallGestureRef.current;
-      if (!gesture?.active) {
-        return;
-      }
-
-      const nextPosition = getPointerScreenPosition(pointerEvent);
-
-      const totalDeltaX = nextPosition.x - gesture.originX;
-      const totalDeltaY = nextPosition.y - gesture.originY;
-      if (
-        !gesture.dragged &&
-        Math.hypot(totalDeltaX, totalDeltaY) < FLOATING_BALL_DRAG_THRESHOLD_PX
-      ) {
-        return;
-      }
-
-      const deltaX = nextPosition.x - gesture.lastX;
-      const deltaY = nextPosition.y - gesture.lastY;
-      if (deltaX === 0 && deltaY === 0) {
-        return;
-      }
-
-      gesture.dragged = true;
-      gesture.lastX = nextPosition.x;
-      gesture.lastY = nextPosition.y;
-      suppressFloatingBallClickRef.current = true;
-      void onMoveFloatingBall(deltaX, deltaY);
-    }
-
-    function handlePointerUp() {
-      floatingBallGestureRef.current = null;
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-  }
-
-  if (simpleMode && simpleModeView === "ball") {
-    return (
-      <div className="app-shell simple-mode simple-mode-ball-view">
-        <div className="simple-mode-floating-ball-shell" data-testid="simple-mode-floating-ball-shell">
-          <button
-            type="button"
-            className="simple-mode-floating-ball"
-            data-testid="simple-mode-floating-ball"
-            aria-label="Open simple mode panel"
-            onPointerDown={handleFloatingBallPointerDown}
-            onClick={() => {
-              if (suppressFloatingBallClickRef.current) {
-                suppressFloatingBallClickRef.current = false;
-                return;
-              }
-              void onSetSimpleModeView("panel");
-            }}
-          >
-            <span className="simple-mode-floating-ball-core" aria-hidden="true" />
-            <span className="simple-mode-floating-ball-label">
-              Brain
-            </span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={simpleMode ? "app-shell simple-mode" : "app-shell"}>
-      {simpleMode ? <div className="simple-mode-drag-strip" aria-hidden="true" /> : null}
-      {simpleMode && simpleModeView === "box" ? null : (
-        <BoxRail
-          boxes={snapshot.boxes}
-          items={snapshot.items}
-          selectedBoxId={selectedBoxId}
-          activePanel={activePanel}
-          simpleMode={simpleMode}
-          onDeleteItem={onDeleteItem}
-          onDeleteBox={onDeleteBox}
-          onEnterSimpleMode={onEnterSimpleMode}
-          onExitSimpleMode={onExitSimpleMode}
-          onCollapseSimpleMode={() => void onSetSimpleModeView("ball")}
-          onSelectPanel={(panel) => {
-            setActivePanel(panel);
-            if (panel === "workspace") {
-              setWorkspaceView("home");
-            }
-          }}
-          onSelectBox={onSelectBox}
-          onOpenBox={openBox}
-          onDropToBox={onDropToBox}
-          onDropTextToBox={onDropTextToBox}
-          onDropImageToBox={onDropImageToBox}
-          onMoveItemToBox={onMoveItemToBox}
-          onReorderBox={onReorderBox}
-        />
-      )}
-      {simpleMode
-        ? simpleModeView === "box"
-          ? workspaceDetailPanel
-          : null
-        : activePanel === "workspace"
-          ? workspacePanel
-          : activePanel === "settings"
-            ? settingsPanel
-            : aboutPanel}
+    <div className="app-shell">
+      <BoxRail
+        boxes={snapshot.boxes}
+        items={snapshot.items}
+        selectedBoxId={selectedBoxId}
+        activePanel={activePanel}
+        onDeleteItem={onDeleteItem}
+        onDeleteBox={onDeleteBox}
+        onSelectPanel={(panel) => {
+          setActivePanel(panel);
+          if (panel === "workspace") {
+            setWorkspaceView("home");
+          }
+        }}
+      />
+      {activePanel === "workspace" ? workspacePanel : activePanel === "settings" ? settingsPanel : aboutPanel}
       {previewImageItem ? (
         <div className="workbench-image-preview-layer" aria-label="工作台图片预览层">
           <div

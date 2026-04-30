@@ -40,6 +40,7 @@ function mockImageSize(image: Element, width: number, height: number) {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("MainCanvas", () => {
@@ -74,15 +75,48 @@ describe("MainCanvas", () => {
       <MainCanvas
         box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
         items={[]}
-        onBackToWorkspace={() => undefined}
       />
     );
 
     expect(container.querySelector(".canvas-topbar")).not.toBeNull();
-    expect(container.querySelector(".canvas-header-kicker")).not.toBeNull();
+    expect(screen.queryByText("当前盒子")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回主界面" })).not.toBeInTheDocument();
     expect(container.querySelector(".canvas-topbar .canvas-toolbar")).not.toBeNull();
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("选择清空类型")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("clears the current box by the selected card kind after confirmation", async () => {
+    const onClearBoxItems = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 31,
+            boxId: 1,
+            kind: "link",
+            title: "https://example.com",
+            content: "https://example.com",
+            sourceUrl: "https://example.com",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+        onClearBoxItems={onClearBoxItems}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("选择清空类型"), { target: { value: "link" } });
+    fireEvent.click(screen.getByRole("button", { name: "清空盒子" }));
+
+    await waitFor(() => expect(onClearBoxItems).toHaveBeenCalledWith(1, "link"));
+    expect(window.confirm).toHaveBeenCalledWith("确定清空「Inbox」里的链接卡片吗？");
   });
 
   it("filters card kinds through inline filter pills", () => {
@@ -125,6 +159,48 @@ describe("MainCanvas", () => {
     expect(screen.getByRole("button", { name: "文件" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByLabelText("卡片 Alpha note")).not.toBeInTheDocument();
     expect(screen.getByLabelText("卡片 brief.docx")).toBeInTheDocument();
+  });
+
+  it("filters cards by one created date", () => {
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 41,
+            boxId: 1,
+            kind: "text",
+            title: "Old note",
+            content: "Old note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-01T08:00:00.000Z",
+            updatedAt: "2026-04-01T08:00:00.000Z",
+          },
+          {
+            id: 42,
+            boxId: 1,
+            kind: "text",
+            title: "Current note",
+            content: "Current note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 1,
+            createdAt: "2026-04-30T08:00:00.000Z",
+            updatedAt: "2026-04-30T08:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("筛选日期"), { target: { value: "2026-04-30" } });
+
+    expect(screen.queryByLabelText("卡片 Old note")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("卡片 Current note")).toBeInTheDocument();
+    expect(screen.getByText("1 / 2 张卡片")).toBeInTheDocument();
   });
 
   it("renders the empty state outside the masonry grid", () => {
@@ -519,8 +595,8 @@ describe("MainCanvas", () => {
     expect(dialog).toBeInTheDocument();
     expect(screen.getByText("阅读视图")).toBeInTheDocument();
     expect(screen.getByText("导出文本")).toBeInTheDocument();
-    expect(dialog).toHaveTextContent("Source note");
-    expect(dialog).toHaveTextContent("brief.pdf");
+    await waitFor(() => expect(dialog).toHaveTextContent("Source note"));
+    await waitFor(() => expect(dialog).toHaveTextContent("brief.pdf"));
     expect(document.querySelector(".bundle-preview")).toBeNull();
   });
 
@@ -582,7 +658,9 @@ describe("MainCanvas", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "提取 组合 #81 的内容" }));
-    fireEvent.click(await screen.findByRole("button", { name: "导出给AI" }));
+    const exportButton = await screen.findByRole("button", { name: "导出给AI" });
+    await waitFor(() => expect(exportButton).not.toBeDisabled());
+    fireEvent.click(exportButton);
 
     await waitFor(() => expect(onExportBundleAi).toHaveBeenCalledTimes(1));
     expect(onExportBundleAi).toHaveBeenCalledWith("组合 #81", expect.stringContaining("<html"));

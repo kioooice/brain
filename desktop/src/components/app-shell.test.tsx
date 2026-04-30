@@ -103,25 +103,6 @@ describe("AppShell", () => {
     expect(onSetClipboardCaptureBox).toHaveBeenCalledWith(2);
   });
 
-  it("enters simple mode from the rail navigation", () => {
-    const onEnterSimpleMode = vi.fn().mockResolvedValue(undefined);
-
-    render(
-      <AppShell
-        onQuickCapture={async () => undefined}
-        onEnterSimpleMode={onEnterSimpleMode}
-        snapshot={{
-          boxes: [{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }],
-          items: [],
-          panelState: { selectedBoxId: 1, quickPanelOpen: true },
-        }}
-      />
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "进入简易模式" }));
-    expect(onEnterSimpleMode).toHaveBeenCalled();
-  });
-
   it("renders the main two-column shell", () => {
     const { container } = render(
       <AppShell
@@ -211,7 +192,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开盒子 Brand" }));
 
     expect(onSelectBox).toHaveBeenCalledWith(2);
-    expect(screen.getByRole("button", { name: "返回主界面" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回主界面" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑当前盒子名称 Brand" })).toBeInTheDocument();
   });
 

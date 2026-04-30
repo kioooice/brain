@@ -4,7 +4,6 @@ import { buildTrayIconDataUrl, buildTrayMenuTemplate, shouldHideWindowToTray } f
 describe("background helpers", () => {
   it("builds a tray menu for restoring views and quitting", () => {
     const onOpenMain = vi.fn();
-    const onOpenSimple = vi.fn();
     const onCaptureClipboard = vi.fn();
     const onToggleClipboardWatcher = vi.fn();
     const onQuit = vi.fn();
@@ -14,7 +13,6 @@ describe("background helpers", () => {
       onCaptureClipboard,
       onToggleClipboardWatcher,
       onOpenMain,
-      onOpenSimple,
       onQuit,
     });
 
@@ -23,7 +21,6 @@ describe("background helpers", () => {
       expect.objectContaining({ label: "开启自动监听" }),
       expect.objectContaining({ type: "separator" }),
       expect.objectContaining({ label: "打开主窗口" }),
-      expect.objectContaining({ label: "打开简易模式" }),
       expect.objectContaining({ type: "separator" }),
       expect.objectContaining({ label: "退出" }),
     ]);
@@ -31,13 +28,11 @@ describe("background helpers", () => {
     template[0].click?.({} as never, {} as never, {} as never);
     template[1].click?.({} as never, {} as never, {} as never);
     template[3].click?.({} as never, {} as never, {} as never);
-    template[4].click?.({} as never, {} as never, {} as never);
-    template[6].click?.({} as never, {} as never, {} as never);
+    template[5].click?.({} as never, {} as never, {} as never);
 
     expect(onCaptureClipboard).toHaveBeenCalledTimes(1);
     expect(onToggleClipboardWatcher).toHaveBeenCalledTimes(1);
     expect(onOpenMain).toHaveBeenCalledTimes(1);
-    expect(onOpenSimple).toHaveBeenCalledTimes(1);
     expect(onQuit).toHaveBeenCalledTimes(1);
   });
 
@@ -45,7 +40,6 @@ describe("background helpers", () => {
     const template = buildTrayMenuTemplate({
       isClipboardWatcherRunning: true,
       onOpenMain: vi.fn(),
-      onOpenSimple: vi.fn(),
       onQuit: vi.fn(),
     });
 

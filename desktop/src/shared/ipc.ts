@@ -1,8 +1,5 @@
 export const IPC_CHANNELS = {
   bootstrap: "workbench/bootstrap",
-  setSimpleMode: "workbench/set-simple-mode",
-  setSimpleModeView: "workbench/set-simple-mode-view",
-  moveFloatingBall: "workbench/move-floating-ball",
   setAlwaysOnTop: "workbench/set-always-on-top",
   captureClipboardNow: "workbench/capture-clipboard-now",
   setClipboardWatcherEnabled: "workbench/set-clipboard-watcher-enabled",
@@ -19,6 +16,7 @@ export const IPC_CHANNELS = {
   updateBox: "workbench/update-box",
   reorderBox: "workbench/reorder-box",
   deleteBox: "workbench/delete-box",
+  clearBoxItems: "workbench/clear-box-items",
   deleteItem: "workbench/delete-item",
   updateItemTitle: "workbench/update-item-title",
   removeBundleEntry: "workbench/remove-bundle-entry",

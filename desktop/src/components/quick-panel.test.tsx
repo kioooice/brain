@@ -137,30 +137,4 @@ describe("QuickPanel", () => {
     expect(dragData.getData("application/x-brain-item-id")).toBe("41");
   });
 
-  it("hides the trash zone in simple mode", () => {
-    render(
-      <QuickPanel
-        open
-        simpleMode
-        boxes={[{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }]}
-        items={[
-          {
-            id: 41,
-            boxId: 1,
-            kind: "image",
-            title: "image.png",
-            content: "data:image/png;base64,ZmFrZQ==",
-            sourceUrl: "",
-            sourcePath: "",
-            bundleCount: 0,
-            sortOrder: 0,
-            createdAt: "2026-04-08T00:00:00.000Z",
-            updatedAt: "2026-04-08T00:00:00.000Z",
-          },
-        ]}
-      />
-    );
-
-    expect(screen.queryByTestId("quick-panel-trash")).not.toBeInTheDocument();
-  });
 });

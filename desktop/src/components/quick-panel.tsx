@@ -16,7 +16,6 @@ type QuickPanelProps = {
   items: Item[];
   boxes: Box[];
   open: boolean;
-  simpleMode?: boolean;
   onDeleteItem?: (itemId: number) => void | Promise<void>;
   onDeleteBox?: (boxId: number) => void | Promise<void>;
 };
@@ -25,7 +24,6 @@ export function QuickPanel({
   items,
   boxes,
   open,
-  simpleMode = false,
   onDeleteItem = async () => undefined,
   onDeleteBox = async () => undefined,
 }: QuickPanelProps) {
@@ -108,15 +106,13 @@ export function QuickPanel({
 
   return (
     <aside className={open ? "quick-panel open" : "quick-panel"} aria-label="快速面板">
-      {simpleMode ? null : (
-        <div className="panel-header">
-          <div className="panel-header-copy">
-            <p className="eyebrow">PANEL</p>
-            <h2>最近</h2>
-          </div>
-          <span className="panel-header-meta">{recentItems.length} items</span>
+      <div className="panel-header">
+        <div className="panel-header-copy">
+          <p className="eyebrow">PANEL</p>
+          <h2>最近</h2>
         </div>
-      )}
+        <span className="panel-header-meta">{recentItems.length} items</span>
+      </div>
 
       <div className="quick-list">
         {recentItems.map((item) => (
@@ -139,21 +135,19 @@ export function QuickPanel({
         ) : null}
       </div>
 
-      {simpleMode ? null : (
-        <div
-          className={trashActive ? "trash-drop-zone active" : "trash-drop-zone"}
-          aria-label="删除垃圾桶"
-          data-testid="quick-panel-trash"
-          data-drop-kind={trashActive ?? "idle"}
-          onDragEnter={handleTrashDragOver}
-          onDragOver={handleTrashDragOver}
-          onDragLeave={handleTrashDragLeave}
-          onDrop={(event) => void handleTrashDrop(event)}
-        >
-          <strong>垃圾桶</strong>
-          <span>把卡片或盒子拖到这里删除</span>
-        </div>
-      )}
+      <div
+        className={trashActive ? "trash-drop-zone active" : "trash-drop-zone"}
+        aria-label="删除垃圾桶"
+        data-testid="quick-panel-trash"
+        data-drop-kind={trashActive ?? "idle"}
+        onDragEnter={handleTrashDragOver}
+        onDragOver={handleTrashDragOver}
+        onDragLeave={handleTrashDragLeave}
+        onDrop={(event) => void handleTrashDrop(event)}
+      >
+        <strong>垃圾桶</strong>
+        <span>把卡片或盒子拖到这里删除</span>
+      </div>
     </aside>
   );
 }

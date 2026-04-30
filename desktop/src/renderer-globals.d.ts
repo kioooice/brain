@@ -1,9 +1,9 @@
 import type {
   BundleEntry,
+  ClearBoxItemsKind,
   ClipboardCaptureBoxStatus,
   ClipboardCaptureIpcResult,
   ClipboardWatcherStatus,
-  SimpleModeView,
   WorkbenchSnapshot,
 } from "./shared/types";
 
@@ -11,9 +11,6 @@ declare global {
   interface Window {
     brainDesktop: {
       bootstrap(): Promise<WorkbenchSnapshot>;
-      setSimpleMode(enabled: boolean): Promise<void>;
-      setSimpleModeView(view: SimpleModeView): Promise<void>;
-      moveFloatingBall(deltaX: number, deltaY: number): Promise<void>;
       getPathsForFiles(files: File[]): string[];
       setAlwaysOnTop(enabled: boolean): Promise<WorkbenchSnapshot>;
       captureClipboardNow(): Promise<ClipboardCaptureIpcResult>;
@@ -31,6 +28,7 @@ declare global {
       updateBox(boxId: number, name: string, description: string): Promise<WorkbenchSnapshot | null>;
       reorderBox(boxId: number, direction: "up" | "down"): Promise<WorkbenchSnapshot>;
       deleteBox(boxId: number): Promise<WorkbenchSnapshot>;
+      clearBoxItems(boxId: number, kind: ClearBoxItemsKind): Promise<WorkbenchSnapshot>;
       deleteItem(itemId: number): Promise<WorkbenchSnapshot>;
       updateItemTitle(itemId: number, title: string): Promise<WorkbenchSnapshot | null>;
       removeBundleEntry(itemId: number, entryPath: string): Promise<WorkbenchSnapshot>;

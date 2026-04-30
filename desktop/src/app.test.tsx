@@ -72,9 +72,6 @@ beforeEach(() => {
   vi.useRealTimers();
   window.brainDesktop = {
     bootstrap: vi.fn().mockResolvedValue(initialSnapshot),
-    setSimpleMode: vi.fn(),
-    setSimpleModeView: vi.fn(),
-    moveFloatingBall: vi.fn(),
     setAlwaysOnTop: vi.fn(),
     captureClipboardNow: vi.fn(),
     setClipboardWatcherEnabled: vi.fn(),
@@ -92,6 +89,7 @@ beforeEach(() => {
     updateBox: vi.fn(),
     reorderBox: vi.fn(),
     deleteBox: vi.fn(),
+    clearBoxItems: vi.fn(),
     deleteItem: vi.fn(),
     updateItemTitle: vi.fn(),
     removeBundleEntry: vi.fn(),
@@ -111,6 +109,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("App", () => {
@@ -426,6 +425,64 @@ describe("App", () => {
     expect((await screen.findAllByText("Brand note")).length).toBeGreaterThan(0);
   });
 
+  it("clears a selected type from the opened box", async () => {
+    const baseSnapshot: WorkbenchSnapshot = {
+      boxes: [{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }],
+      items: [
+        {
+          id: 41,
+          boxId: 1,
+          kind: "text",
+          title: "Keep note",
+          content: "Keep note",
+          sourceUrl: "",
+          sourcePath: "",
+          bundleCount: 0,
+          sortOrder: 0,
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:00.000Z",
+        },
+        {
+          id: 42,
+          boxId: 1,
+          kind: "link",
+          title: "https://example.com",
+          content: "https://example.com",
+          sourceUrl: "https://example.com",
+          sourcePath: "",
+          bundleCount: 0,
+          sortOrder: 1,
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T00:00:00.000Z",
+        },
+      ],
+      panelState: { selectedBoxId: 1, quickPanelOpen: true },
+    };
+    const clearedSnapshot = {
+      ...baseSnapshot,
+      items: [baseSnapshot.items[0]],
+    };
+    const clearBoxItems = vi.fn().mockResolvedValue(clearedSnapshot);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    window.brainDesktop = {
+      ...window.brainDesktop,
+      bootstrap: vi.fn().mockResolvedValue(baseSnapshot),
+      selectBox: vi.fn().mockResolvedValue(baseSnapshot),
+      clearBoxItems,
+    };
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开盒子 Inbox" }));
+    fireEvent.change(await screen.findByLabelText("选择清空类型"), { target: { value: "link" } });
+    fireEvent.click(screen.getByRole("button", { name: "清空盒子" }));
+
+    await waitFor(() => expect(clearBoxItems).toHaveBeenCalledWith(1, "link"));
+    expect(await screen.findByText("Keep note")).toBeInTheDocument();
+    expect(screen.queryByText("https://example.com")).not.toBeInTheDocument();
+  });
+
   it.skip("moves a card into another box by dragging onto the box rail", async () => {
     const baseSnapshot: WorkbenchSnapshot = {
       boxes: [
@@ -677,226 +734,6 @@ describe("App", () => {
     await waitFor(() =>
       expect(captureImageData).toHaveBeenCalledWith("data:image/png;base64,ZmFrZQ==", "shot.png")
     );
-  });
-
-  it("captures pasted images into the currently highlighted box in simple mode", async () => {
-    class MockFileReader {
-      result: string | ArrayBuffer | null = null;
-      onload: null | (() => void) = null;
-
-      readAsDataURL() {
-        this.result = "data:image/png;base64,ZmFrZQ==";
-        this.onload?.();
-      }
-    }
-
-    vi.stubGlobal("FileReader", MockFileReader);
-
-    const simpleSnapshot: WorkbenchSnapshot = {
-      boxes: [
-        { id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 },
-        { id: 2, name: "Brand", color: "#2563eb", description: "", sortOrder: 1 },
-      ],
-      items: [],
-      panelState: { selectedBoxId: 1, quickPanelOpen: true, simpleMode: true, simpleModeView: "panel" },
-    };
-    const captureImageDataIntoBox = vi.fn().mockResolvedValue(simpleSnapshot);
-
-    window.brainDesktop = {
-      ...window.brainDesktop,
-      bootstrap: vi.fn().mockResolvedValue(simpleSnapshot),
-      captureImageDataIntoBox,
-    };
-
-    render(<App />);
-    await screen.findByRole("button", { name: "选择盒子 Inbox" });
-
-    const imageFile = new File(["fake"], "shot.png", { type: "image/png" });
-    const event = new Event("paste", { bubbles: true, cancelable: true }) as Event & {
-      clipboardData?: {
-        getData(type: string): string;
-        items: Array<{ kind: string; type: string; getAsFile(): File }>;
-        files: File[];
-      };
-    };
-    Object.defineProperty(event, "clipboardData", {
-      value: {
-        getData: () => "",
-        items: [
-          {
-            kind: "file",
-            type: "image/png",
-            getAsFile: () => imageFile,
-          },
-        ],
-        files: [imageFile],
-      },
-    });
-
-    fireEvent(window, event);
-
-    await waitFor(() =>
-      expect(captureImageDataIntoBox).toHaveBeenCalledWith("data:image/png;base64,ZmFrZQ==", "shot.png", 1)
-    );
-  });
-
-  it("captures pasted images into the clicked box in simple mode", async () => {
-    class MockFileReader {
-      result: string | ArrayBuffer | null = null;
-      onload: null | (() => void) = null;
-
-      readAsDataURL() {
-        this.result = "data:image/png;base64,ZmFrZQ==";
-        this.onload?.();
-      }
-    }
-
-    vi.stubGlobal("FileReader", MockFileReader);
-
-    const simpleSnapshot: WorkbenchSnapshot = {
-      boxes: [
-        { id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 },
-        { id: 2, name: "Brand", color: "#2563eb", description: "", sortOrder: 1 },
-      ],
-      items: [],
-      panelState: { selectedBoxId: 1, quickPanelOpen: true, simpleMode: true, simpleModeView: "panel" },
-    };
-    const selectedBrandSnapshot: WorkbenchSnapshot = {
-      ...simpleSnapshot,
-      panelState: { selectedBoxId: 2, quickPanelOpen: true, simpleMode: true, simpleModeView: "panel" },
-    };
-    const selectBox = vi.fn().mockResolvedValue(selectedBrandSnapshot);
-    const captureImageDataIntoBox = vi.fn().mockResolvedValue(selectedBrandSnapshot);
-
-    window.brainDesktop = {
-      ...window.brainDesktop,
-      bootstrap: vi.fn().mockResolvedValue(simpleSnapshot),
-      selectBox,
-      captureImageDataIntoBox,
-    };
-
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "选择盒子 Brand" }));
-    await waitFor(() => expect(selectBox).toHaveBeenCalledWith(2));
-
-    const imageFile = new File(["fake"], "shot.png", { type: "image/png" });
-    const event = new Event("paste", { bubbles: true, cancelable: true }) as Event & {
-      clipboardData?: {
-        getData(type: string): string;
-        items: Array<{ kind: string; type: string; getAsFile(): File }>;
-        files: File[];
-      };
-    };
-    Object.defineProperty(event, "clipboardData", {
-      value: {
-        getData: () => "",
-        items: [
-          {
-            kind: "file",
-            type: "image/png",
-            getAsFile: () => imageFile,
-          },
-        ],
-        files: [imageFile],
-      },
-    });
-
-    fireEvent(window, event);
-
-    await waitFor(() =>
-      expect(captureImageDataIntoBox).toHaveBeenCalledWith("data:image/png;base64,ZmFrZQ==", "shot.png", 2)
-    );
-  });
-
-  it("does not capture pasted images while simple mode is in floating-ball view", async () => {
-    class MockFileReader {
-      result: string | ArrayBuffer | null = null;
-      onload: null | (() => void) = null;
-
-      readAsDataURL() {
-        this.result = "data:image/png;base64,ZmFrZQ==";
-        this.onload?.();
-      }
-    }
-
-    vi.stubGlobal("FileReader", MockFileReader);
-
-    const ballSnapshot: WorkbenchSnapshot = {
-      boxes: [
-        { id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 },
-        { id: 2, name: "Brand", color: "#2563eb", description: "", sortOrder: 1 },
-      ],
-      items: [],
-      panelState: { selectedBoxId: 1, quickPanelOpen: true, simpleMode: true, simpleModeView: "ball" },
-    };
-    const captureImageDataIntoBox = vi.fn().mockResolvedValue(ballSnapshot);
-
-    window.brainDesktop = {
-      ...window.brainDesktop,
-      bootstrap: vi.fn().mockResolvedValue(ballSnapshot),
-      captureImageDataIntoBox,
-    };
-
-    render(<App />);
-    await screen.findByTestId("simple-mode-floating-ball");
-
-    const imageFile = new File(["fake"], "shot.png", { type: "image/png" });
-    const event = new Event("paste", { bubbles: true, cancelable: true }) as Event & {
-      clipboardData?: {
-        getData(type: string): string;
-        items: Array<{ kind: string; type: string; getAsFile(): File }>;
-        files: File[];
-      };
-    };
-    Object.defineProperty(event, "clipboardData", {
-      value: {
-        getData: () => "",
-        items: [
-          {
-            kind: "file",
-            type: "image/png",
-            getAsFile: () => imageFile,
-          },
-        ],
-        files: [imageFile],
-      },
-    });
-
-    fireEvent(window, event);
-
-    await waitFor(() => expect(captureImageDataIntoBox).not.toHaveBeenCalled());
-  });
-
-  it("moves the floating ball window when dragging the ball", async () => {
-    const ballSnapshot: WorkbenchSnapshot = {
-      boxes: [
-        { id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 },
-        { id: 2, name: "Brand", color: "#2563eb", description: "", sortOrder: 1 },
-      ],
-      items: [],
-      panelState: { selectedBoxId: 1, quickPanelOpen: true, simpleMode: true, simpleModeView: "ball" },
-    };
-    const moveFloatingBall = vi.fn().mockResolvedValue(undefined);
-    const setSimpleModeView = vi.fn();
-
-    window.brainDesktop = {
-      ...window.brainDesktop,
-      bootstrap: vi.fn().mockResolvedValue(ballSnapshot),
-      moveFloatingBall,
-      setSimpleModeView,
-    };
-
-    render(<App />);
-
-    const ball = await screen.findByTestId("simple-mode-floating-ball");
-    fireEvent.pointerDown(ball, { clientX: 64, clientY: 64, screenX: 900, screenY: 600, button: 0 });
-    fireEvent.pointerMove(window, { clientX: 64, clientY: 64, screenX: 914, screenY: 618, buttons: 1 });
-    fireEvent.pointerUp(window, { clientX: 64, clientY: 64, screenX: 914, screenY: 618, button: 0 });
-    fireEvent.click(ball);
-
-    await waitFor(() => expect(moveFloatingBall).toHaveBeenCalledWith(14, 18));
-    expect(setSimpleModeView).not.toHaveBeenCalled();
   });
 
   it("shows a restart hint when image paste hits a missing IPC handler", async () => {
@@ -1819,9 +1656,6 @@ describe("preload bridge", () => {
       "brainDesktop",
       expect.objectContaining({
         bootstrap: expect.any(Function),
-        setSimpleMode: expect.any(Function),
-        setSimpleModeView: expect.any(Function),
-        moveFloatingBall: expect.any(Function),
         setAlwaysOnTop: expect.any(Function),
         captureClipboardNow: expect.any(Function),
         setClipboardWatcherEnabled: expect.any(Function),
@@ -1839,6 +1673,7 @@ describe("preload bridge", () => {
         updateBox: expect.any(Function),
         reorderBox: expect.any(Function),
         deleteBox: expect.any(Function),
+        clearBoxItems: expect.any(Function),
         deleteItem: expect.any(Function),
         updateItemTitle: expect.any(Function),
         removeBundleEntry: expect.any(Function),
@@ -1860,9 +1695,6 @@ describe("preload bridge", () => {
     await import("./preload");
     const exposedApi = electronMocks.exposeInMainWorld.mock.calls[0]?.[1] as {
       bootstrap: () => Promise<unknown>;
-      setSimpleMode: (enabled: boolean) => Promise<unknown>;
-      setSimpleModeView: (view: "ball" | "panel") => Promise<unknown>;
-      moveFloatingBall: (deltaX: number, deltaY: number) => Promise<unknown>;
       setAlwaysOnTop: (enabled: boolean) => Promise<unknown>;
       captureClipboardNow: () => Promise<unknown>;
       setClipboardWatcherEnabled: (enabled: boolean) => Promise<unknown>;
@@ -1880,6 +1712,7 @@ describe("preload bridge", () => {
       updateBox: (boxId: number, name: string, description: string) => Promise<unknown>;
       reorderBox: (boxId: number, direction: "up" | "down") => Promise<unknown>;
       deleteBox: (boxId: number) => Promise<unknown>;
+      clearBoxItems: (boxId: number, kind: "all" | "text" | "link" | "image" | "file" | "bundle") => Promise<unknown>;
       deleteItem: (itemId: number) => Promise<unknown>;
       updateItemTitle: (itemId: number, title: string) => Promise<unknown>;
       removeBundleEntry: (itemId: number, entryPath: string) => Promise<unknown>;
@@ -1896,9 +1729,6 @@ describe("preload bridge", () => {
     };
 
     await exposedApi.bootstrap();
-    await exposedApi.setSimpleMode(true);
-    await exposedApi.setSimpleModeView("panel");
-    await exposedApi.moveFloatingBall(12, 18);
     await exposedApi.setAlwaysOnTop(true);
     await exposedApi.captureClipboardNow();
     await exposedApi.setClipboardWatcherEnabled(true);
@@ -1916,6 +1746,7 @@ describe("preload bridge", () => {
     await exposedApi.updateBox(7, "Library", "Saved references");
     await exposedApi.reorderBox(7, "up");
     await exposedApi.deleteBox(7);
+    await exposedApi.clearBoxItems(7, "link");
     await exposedApi.deleteItem(42);
     await exposedApi.updateItemTitle(42, "Renamed");
     await exposedApi.removeBundleEntry(42, "C:\\assets\\missing");
@@ -1931,54 +1762,52 @@ describe("preload bridge", () => {
     await exposedApi.getBundleEntries(42);
 
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, "workbench/bootstrap");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, "workbench/set-simple-mode", true);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, "workbench/set-simple-mode-view", "panel");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(4, "workbench/move-floating-ball", 12, 18);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, "workbench/set-always-on-top", true);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, "workbench/capture-clipboard-now");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, "workbench/set-clipboard-watcher-enabled", true);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, "workbench/get-clipboard-watcher-status");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(9, "workbench/set-clipboard-capture-box", 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(10, "workbench/get-clipboard-capture-box");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(11, "workbench/capture-text-or-link", "Quick note");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(12, "workbench/capture-text-or-link-into-box", "Quick note", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, "workbench/set-always-on-top", true);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, "workbench/capture-clipboard-now");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(4, "workbench/set-clipboard-watcher-enabled", true);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, "workbench/get-clipboard-watcher-status");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, "workbench/set-clipboard-capture-box", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, "workbench/get-clipboard-capture-box");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, "workbench/capture-text-or-link", "Quick note");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(9, "workbench/capture-text-or-link-into-box", "Quick note", 7);
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(
-      13,
+      10,
       "workbench/capture-image-data",
       "data:image/png;base64,ZmFrZQ==",
       "shot.png"
     );
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(
-      14,
+      11,
       "workbench/capture-image-data-into-box",
       "data:image/png;base64,ZmFrZQ==",
       "shot.png",
       7
     );
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(15, "workbench/capture-dropped-paths", ["C:\\assets\\hero.png"]);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(12, "workbench/capture-dropped-paths", ["C:\\assets\\hero.png"]);
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(
-      16,
+      13,
       "workbench/capture-dropped-paths-into-box",
       ["C:\\assets\\hero.png"],
       7
     );
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(17, "workbench/create-box", "Visuals");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(18, "workbench/update-box", 7, "Library", "Saved references");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(19, "workbench/reorder-box", 7, "up");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(20, "workbench/delete-box", 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(21, "workbench/delete-item", 42);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(22, "workbench/update-item-title", 42, "Renamed");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(23, "workbench/remove-bundle-entry", 42, "C:\\assets\\missing");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(24, "workbench/select-box", 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(25, "workbench/open-path", "C:\\assets\\hero.png");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(26, "workbench/open-external", "https://example.com");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(27, "workbench/copy-text", "C:\\assets\\hero.png");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(28, "workbench/group-items", 42, 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(29, "workbench/enrich-link-title", 42, "https://example.com");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(30, "workbench/move-item-to-box", 42, 7);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(31, "workbench/move-item-to-index", 42, 3);
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(32, "workbench/reorder-item", 42, "down");
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(33, "workbench/get-bundle-entries", 42);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(14, "workbench/create-box", "Visuals");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(15, "workbench/update-box", 7, "Library", "Saved references");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(16, "workbench/reorder-box", 7, "up");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(17, "workbench/delete-box", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(18, "workbench/clear-box-items", 7, "link");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(19, "workbench/delete-item", 42);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(20, "workbench/update-item-title", 42, "Renamed");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(21, "workbench/remove-bundle-entry", 42, "C:\\assets\\missing");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(22, "workbench/select-box", 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(23, "workbench/open-path", "C:\\assets\\hero.png");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(24, "workbench/open-external", "https://example.com");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(25, "workbench/copy-text", "C:\\assets\\hero.png");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(26, "workbench/group-items", 42, 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(27, "workbench/enrich-link-title", 42, "https://example.com");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(28, "workbench/move-item-to-box", 42, 7);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(29, "workbench/move-item-to-index", 42, 3);
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(30, "workbench/reorder-item", 42, "down");
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(31, "workbench/get-bundle-entries", 42);
     expect(electronMocks.getPathForFile).toHaveBeenCalledWith(expect.objectContaining({ name: "brief.docx" }));
   });
 });

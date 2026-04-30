@@ -2,25 +2,16 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC_CHANNELS } from "./shared/ipc";
 import type {
   BundleEntry,
+  ClearBoxItemsKind,
   ClipboardCaptureBoxStatus,
   ClipboardCaptureIpcResult,
   ClipboardWatcherStatus,
-  SimpleModeView,
   WorkbenchSnapshot,
 } from "./shared/types";
 
 contextBridge.exposeInMainWorld("brainDesktop", {
   bootstrap(): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.bootstrap);
-  },
-  setSimpleMode(enabled: boolean): Promise<void> {
-    return ipcRenderer.invoke(IPC_CHANNELS.setSimpleMode, enabled);
-  },
-  setSimpleModeView(view: SimpleModeView): Promise<void> {
-    return ipcRenderer.invoke(IPC_CHANNELS.setSimpleModeView, view);
-  },
-  moveFloatingBall(deltaX: number, deltaY: number): Promise<void> {
-    return ipcRenderer.invoke(IPC_CHANNELS.moveFloatingBall, deltaX, deltaY);
   },
   getPathsForFiles(files: File[]): string[] {
     return files.map((file) => webUtils.getPathForFile(file)).filter((path) => path.trim().length > 0);
@@ -72,6 +63,9 @@ contextBridge.exposeInMainWorld("brainDesktop", {
   },
   deleteBox(boxId: number): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.deleteBox, boxId);
+  },
+  clearBoxItems(boxId: number, kind: ClearBoxItemsKind): Promise<WorkbenchSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clearBoxItems, boxId, kind);
   },
   deleteItem(itemId: number): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.deleteItem, itemId);
