@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildFingerprint,
+  clearRecentFingerprints,
+  hydrateRecentFingerprints,
   isDuplicateRecent,
   rememberFingerprint,
+  serializeRecentFingerprints,
   shouldIgnoreText,
 } from "./dedupe";
 
 describe("dedupe", () => {
   beforeEach(() => {
+    clearRecentFingerprints();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-30T00:00:00.000Z"));
   });
@@ -33,6 +37,15 @@ describe("dedupe", () => {
     expect(tracked).toBe(clean);
   });
 
+  it("builds stable hashed image fingerprints without storing the full data URL", () => {
+    const first = buildFingerprint("image", "data:image/png;base64,ZmFrZQ==");
+    const second = buildFingerprint("image", " data:image/png;base64,ZmFrZQ== ");
+
+    expect(second).toBe(first);
+    expect(first).toMatch(/^image:[a-f0-9]{32}$/);
+    expect(first).not.toContain("ZmFrZQ");
+  });
+
   it("treats matching fingerprints as recent duplicates for ten seconds", () => {
     const fingerprint = buildFingerprint("text", "Useful note with enough context");
 
@@ -41,6 +54,23 @@ describe("dedupe", () => {
     expect(isDuplicateRecent(fingerprint)).toBe(true);
 
     vi.advanceTimersByTime(10001);
+
+    expect(isDuplicateRecent(fingerprint)).toBe(false);
+  });
+
+  it("hydrates recent fingerprints from a short-lived persisted snapshot", () => {
+    const fingerprint = buildFingerprint("text", "Useful note with enough context");
+    rememberFingerprint(fingerprint);
+    const snapshot = serializeRecentFingerprints();
+
+    clearRecentFingerprints();
+    hydrateRecentFingerprints(snapshot);
+
+    expect(isDuplicateRecent(fingerprint)).toBe(true);
+
+    vi.advanceTimersByTime(10001);
+    clearRecentFingerprints();
+    hydrateRecentFingerprints(snapshot);
 
     expect(isDuplicateRecent(fingerprint)).toBe(false);
   });

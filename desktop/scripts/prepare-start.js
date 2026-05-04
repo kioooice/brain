@@ -11,6 +11,7 @@ function prepareWebpackStart(options = {}) {
   const pathExists = options.existsSync ?? existsSync;
   const removePath = options.rmSync ?? rmSync;
   const runCommand = options.execFileSync ?? execFileSync;
+  const logger = options.logger;
   const artifactDirs = [join(projectDir, ".webpack"), join(projectDir, "out"), join(workspaceDir, ".desktop-out")];
   let removedAny = false;
 
@@ -20,6 +21,7 @@ function prepareWebpackStart(options = {}) {
     }
 
     removedAny = true;
+    logger?.(`Cleaning generated output: ${artifactDir}`);
 
     try {
       clearWindowsReadOnlyAttributes(artifactDir, { execFileSync: runCommand });
@@ -37,7 +39,7 @@ function prepareWebpackStart(options = {}) {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Unable to clean ${artifactDir} before start. Close File Explorer previews or other apps using generated build output and retry. ${reason}`
+        `Unable to clean ${artifactDir} before start. Close Brain Desktop, npm start, File Explorer previews, or other apps using generated build output and retry. ${reason}`
       );
     }
   }
@@ -46,7 +48,10 @@ function prepareWebpackStart(options = {}) {
 }
 
 if (require.main === module) {
-  prepareWebpackStart();
+  const removedAny = prepareWebpackStart({ logger: console.log });
+  if (!removedAny) {
+    console.log("No generated output to clean.");
+  }
 }
 
 module.exports = {

@@ -20,15 +20,18 @@ describe("prepareWebpackStart", () => {
     const existsSync = vi.fn().mockReturnValue(true);
     const execFileSync = vi.fn();
     const rmSync = vi.fn();
+    const logger = vi.fn();
 
     const removed = prepareWebpackStart({
       projectDir: "D:\\02-Projects\\brain\\desktop",
       existsSync,
       execFileSync,
       rmSync,
+      logger,
     });
 
     expect(removed).toBe(true);
+    expect(logger).toHaveBeenCalledWith("Cleaning generated output: D:\\02-Projects\\brain\\desktop\\.webpack");
     expect(execFileSync).toHaveBeenCalledWith(
       "attrib",
       ["-R", "D:\\02-Projects\\brain\\desktop\\.webpack", "/S", "/D"],

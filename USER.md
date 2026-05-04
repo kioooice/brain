@@ -9,6 +9,6 @@ Capture stable preferences and project context here.
 
 ## Context
 
-- Working on a local Flask app for collecting and organizing inspirations.
+- Working on Brain Desktop, an Electron app for low-friction local collection and organization.
 - Prefers practical edits that improve the actual app, not just the structure around it.
 - Keep suggestions short and actionable.

@@ -16,7 +16,9 @@ desktop/out/
 desktop/data/
 desktop/.packager-tmp/
 
+.desktop-out/
 .packager-tmp/
+.skill_runtime/
 .superpowers/
 
 launcher.log

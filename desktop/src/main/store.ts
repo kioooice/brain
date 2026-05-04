@@ -1,20 +1,39 @@
 import Database from "better-sqlite3";
 import * as fs from "node:fs";
-import { basename, extname } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { nativeImage } from "electron";
 import type {
+  AiOrganizationSuggestion,
+  AutoCaptureSnapshot,
   Box,
   BundleEntry,
   ClearBoxItemsKind,
   Item,
-  SimpleModeView,
-  WindowBounds,
+  LocalSearchSnapshot,
+  NotepadSnapshot,
+  StorageCleanupResult,
+  StorageUsageSnapshot,
   WorkbenchSnapshot,
 } from "../shared/types";
+import { matchesNormalizedSearch } from "../shared/search-normalization";
+import { buildFingerprint } from "./dedupe";
 
 export type DesktopStore = {
   getWorkbenchSnapshot: () => WorkbenchSnapshot;
-  setAlwaysOnTop: (enabled: boolean) => WorkbenchSnapshot;
+  getNotepadSnapshot: () => NotepadSnapshot;
+  createNotepadGroup: (name: string) => NotepadSnapshot;
+  createNotepadNote: (groupId: number, content: string) => NotepadSnapshot;
+  getAutoCaptureSnapshot: (query?: string) => AutoCaptureSnapshot;
+  addAutoCaptureEntry: (imagePath: string, ocrText: string) => AutoCaptureSnapshot;
+  pruneAutoCaptureEntriesBefore: (cutoffIso: string) => string[];
+  deleteAutoCaptureEntry: (entryId: number) => AutoCaptureSnapshot;
+  clearAutoCaptureEntries: () => AutoCaptureSnapshot;
+  getAutoCaptureEntryPath: (entryId: number) => string | null;
+  getAutoCaptureEntryPaths: (entryId?: number) => string[];
+  getStorageUsage: (autoCaptureDirectory?: string) => StorageUsageSnapshot;
+  cleanupOrphanedStorageFiles: (autoCaptureDirectory?: string) => StorageCleanupResult;
+  searchLocal: (query: string, limit?: number) => LocalSearchSnapshot;
   captureTextOrLink: (input: string) => WorkbenchSnapshot;
   captureTextOrLinkIntoBox: (input: string, boxId: number) => WorkbenchSnapshot;
   captureImageData: (dataUrl: string, title?: string) => WorkbenchSnapshot;
@@ -33,6 +52,7 @@ export type DesktopStore = {
   moveItemToBox: (itemId: number, boxId: number) => WorkbenchSnapshot;
   moveItemToIndex: (itemId: number, targetIndex: number) => WorkbenchSnapshot;
   reorderItem: (itemId: number, direction: "up" | "down") => WorkbenchSnapshot;
+  applyAiOrganization: (suggestions: AiOrganizationSuggestion[]) => WorkbenchSnapshot;
   selectBox: (boxId: number) => WorkbenchSnapshot;
   getBundleEntries: (bundleItemId: number) => BundleEntry[];
   updateLinkTitle: (itemId: number, title: string) => WorkbenchSnapshot | null;
@@ -41,6 +61,8 @@ export type DesktopStore = {
 
 export function createStore(filename: string): DesktopStore {
   const BOX_COLORS = ["#f97316", "#2563eb", "#16a34a", "#dc2626", "#d97706", "#0891b2"];
+  const imageCaptureDirectory = resolve(dirname(filename), "image-captures");
+  const imageThumbnailDirectory = resolve(dirname(filename), "image-thumbnails");
   const db = new Database(filename);
   db.exec(`
     create table if not exists boxes (
@@ -59,6 +81,8 @@ export function createStore(filename: string): DesktopStore {
       content text not null default '',
       source_url text not null default '',
       source_path text not null default '',
+      thumbnail_path text not null default '',
+      capture_fingerprint text not null default '',
       sort_order integer not null default 0,
       created_at text not null default '',
       updated_at text not null default ''
@@ -72,31 +96,41 @@ export function createStore(filename: string): DesktopStore {
     );
     create table if not exists panel_state (
       id integer primary key check (id = 1),
-      selected_box_id integer,
-      quick_panel_open integer not null default 1,
-      simple_mode integer not null default 0,
-      always_on_top integer not null default 0,
-      simple_mode_view text not null default 'ball',
-      floating_ball_x integer,
-      floating_ball_y integer,
-      floating_ball_width integer,
-      floating_ball_height integer
+      selected_box_id integer
+    );
+    create table if not exists notepad_groups (
+      id integer primary key autoincrement,
+      name text not null,
+      sort_order integer not null,
+      created_at text not null default '',
+      updated_at text not null default ''
+    );
+    create table if not exists notepad_notes (
+      id integer primary key autoincrement,
+      group_id integer not null,
+      content text not null,
+      sort_order integer not null default 0,
+      created_at text not null default '',
+      updated_at text not null default ''
+    );
+    create table if not exists auto_capture_entries (
+      id integer primary key autoincrement,
+      image_path text not null,
+      thumbnail_path text not null default '',
+      ocr_text text not null default '',
+      created_at text not null default ''
     );
   `);
   for (const statement of [
     "alter table items add column source_url text not null default ''",
     "alter table items add column source_path text not null default ''",
+    "alter table items add column thumbnail_path text not null default ''",
     "alter table items add column sort_order integer not null default 0",
     "alter table items add column created_at text not null default ''",
     "alter table items add column updated_at text not null default ''",
     "alter table items add column bundle_parent_item_id integer",
-    "alter table panel_state add column simple_mode integer not null default 0",
-    "alter table panel_state add column always_on_top integer not null default 0",
-    "alter table panel_state add column simple_mode_view text not null default 'ball'",
-    "alter table panel_state add column floating_ball_x integer",
-    "alter table panel_state add column floating_ball_y integer",
-    "alter table panel_state add column floating_ball_width integer",
-    "alter table panel_state add column floating_ball_height integer",
+    "alter table items add column capture_fingerprint text not null default ''",
+    "alter table auto_capture_entries add column thumbnail_path text not null default ''",
   ]) {
     try {
       db.exec(statement);
@@ -104,15 +138,34 @@ export function createStore(filename: string): DesktopStore {
       // Column already exists in previously bootstrapped databases.
     }
   }
+  db.exec(
+    "create index if not exists items_recent_capture_fingerprint on items (box_id, capture_fingerprint, created_at)"
+  );
+  db.exec("create index if not exists items_capture_fingerprint on items (box_id, capture_fingerprint)");
+  db.exec("create index if not exists bundle_entries_entry_path on bundle_entries (entry_path)");
+  db.exec("create index if not exists notepad_notes_group_sort on notepad_notes (group_id, sort_order)");
+  db.exec("create index if not exists auto_capture_entries_created_at on auto_capture_entries (created_at)");
+  db.exec("create index if not exists auto_capture_entries_ocr_text on auto_capture_entries (ocr_text)");
 
   const boxCount = db.prepare("select count(*) as count from boxes").get() as { count: number };
   if (boxCount.count === 0) {
     const info = db
       .prepare("insert into boxes (name, color, description, sort_order) values (?, ?, ?, ?)")
       .run("收件箱", "#f97316", "默认收集盒子", 0);
-    db.prepare(
-      "insert or replace into panel_state (id, selected_box_id, quick_panel_open, simple_mode, always_on_top, simple_mode_view, floating_ball_x, floating_ball_y, floating_ball_width, floating_ball_height) values (1, ?, 1, 0, 0, 'ball', null, null, null, null)"
-    ).run(Number(info.lastInsertRowid));
+    db.prepare("insert or replace into panel_state (id, selected_box_id) values (1, ?)").run(
+      Number(info.lastInsertRowid)
+    );
+  }
+
+  const notepadGroupCount = db.prepare("select count(*) as count from notepad_groups").get() as { count: number };
+  if (notepadGroupCount.count === 0) {
+    const timestamp = new Date().toISOString();
+    db.prepare("insert into notepad_groups (name, sort_order, created_at, updated_at) values (?, ?, ?, ?)").run(
+      "默认",
+      0,
+      timestamp,
+      timestamp
+    );
   }
 
   function nowIso() {
@@ -150,6 +203,385 @@ export function createStore(filename: string): DesktopStore {
     );
   }
 
+  function buildDroppedPathFingerprint(filePath: string) {
+    return buildFingerprint(isImagePath(filePath) ? "image-path" : "file", filePath.toLowerCase());
+  }
+
+  function getImageMimeType(filePath: string) {
+    switch (extname(filePath).toLowerCase()) {
+      case ".jpg":
+      case ".jpeg":
+        return "image/jpeg";
+      case ".webp":
+        return "image/webp";
+      case ".gif":
+        return "image/gif";
+      case ".bmp":
+        return "image/bmp";
+      case ".svg":
+        return "image/svg+xml";
+      case ".avif":
+        return "image/avif";
+      default:
+        return "image/png";
+    }
+  }
+
+  function getImageExtensionFromMimeType(mimeType: string) {
+    switch (mimeType.toLowerCase()) {
+      case "image/jpeg":
+        return "jpg";
+      case "image/webp":
+        return "webp";
+      case "image/gif":
+        return "gif";
+      case "image/bmp":
+        return "bmp";
+      case "image/svg+xml":
+        return "svg";
+      case "image/avif":
+        return "avif";
+      default:
+        return "png";
+    }
+  }
+
+  function parseImageDataUrl(dataUrl: string) {
+    const match = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/is.exec(dataUrl.trim());
+    if (!match) {
+      return null;
+    }
+
+    const buffer = Buffer.from(match[2].replace(/\s/g, ""), "base64");
+    if (buffer.length === 0) {
+      return null;
+    }
+
+    return {
+      buffer,
+      extension: getImageExtensionFromMimeType(match[1]),
+    };
+  }
+
+  function buildImageCaptureFilename(title: string, fingerprint: string, extension: string, itemId?: number) {
+    const titleStem = basename(title, extname(title))
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const hash = fingerprint.replace(/^image:/, "").slice(0, 16);
+    const idPrefix = itemId == null ? "" : `${itemId}-`;
+    const titleSuffix = titleStem ? `-${titleStem}` : "";
+    return `${idPrefix}${timestamp}-${hash}${titleSuffix}.${extension}`;
+  }
+
+  function scaleToMaxEdge(width: number, height: number, maxEdge: number) {
+    const safeWidth = Math.max(1, Math.round(width));
+    const safeHeight = Math.max(1, Math.round(height));
+    const longestEdge = Math.max(safeWidth, safeHeight);
+    if (longestEdge <= maxEdge) {
+      return {
+        width: safeWidth,
+        height: safeHeight,
+      };
+    }
+
+    const scale = maxEdge / longestEdge;
+    return {
+      width: Math.max(1, Math.round(safeWidth * scale)),
+      height: Math.max(1, Math.round(safeHeight * scale)),
+    };
+  }
+
+  function buildThumbnailFilename(imagePath: string) {
+    const stem = basename(imagePath, extname(imagePath))
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "image";
+    const hash = buildFingerprint("thumbnail", imagePath).replace(/^thumbnail:/, "").slice(0, 12);
+    return `${stem}-${hash}.jpg`;
+  }
+
+  function createImageThumbnail(imagePath: string) {
+    try {
+      const image = nativeImage.createFromPath(imagePath);
+      if (image.isEmpty()) {
+        return "";
+      }
+
+      const size = image.getSize();
+      const targetSize = scaleToMaxEdge(size.width, size.height, 360);
+      fs.mkdirSync(imageThumbnailDirectory, { recursive: true });
+      const thumbnailPath = join(imageThumbnailDirectory, buildThumbnailFilename(imagePath));
+      const thumbnail = image.resize({ ...targetSize, quality: "good" }).toJPEG(68);
+      fs.writeFileSync(thumbnailPath, thumbnail);
+      return thumbnailPath;
+    } catch {
+      return "";
+    }
+  }
+
+  function saveImageDataUrl(dataUrl: string, title: string, fingerprint: string, itemId?: number) {
+    const parsed = parseImageDataUrl(dataUrl);
+    if (!parsed) {
+      return null;
+    }
+
+    fs.mkdirSync(imageCaptureDirectory, { recursive: true });
+    const imagePath = join(
+      imageCaptureDirectory,
+      buildImageCaptureFilename(title, fingerprint, parsed.extension, itemId)
+    );
+    fs.writeFileSync(imagePath, parsed.buffer);
+    return imagePath;
+  }
+
+  function getImageDisplayUrl(imagePath: string) {
+    try {
+      const image = fs.readFileSync(imagePath);
+      return `data:${getImageMimeType(imagePath)};base64,${image.toString("base64")}`;
+    } catch {
+      return "";
+    }
+  }
+
+  function formatLocalDateTime(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function getItemKindLabel(kind: string) {
+    switch (kind) {
+      case "text":
+        return "文本";
+      case "link":
+        return "链接";
+      case "image":
+        return "图片";
+      case "file":
+        return "文件";
+      case "bundle":
+        return "组合";
+      default:
+        return kind;
+    }
+  }
+
+  function getSearchPreview(parts: Array<string | null | undefined>, fallback: string) {
+    const preview = parts.map((part) => part?.trim() ?? "").find(Boolean) ?? fallback;
+    return preview.length > 92 ? `${preview.slice(0, 92).trimEnd()}...` : preview;
+  }
+
+  function getPathStat(targetPath: string) {
+    try {
+      return fs.statSync(targetPath);
+    } catch {
+      return null;
+    }
+  }
+
+  function getPathSize(targetPath: string): number {
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      return 0;
+    }
+
+    const stat = getPathStat(targetPath);
+    if (!stat) {
+      return 0;
+    }
+
+    if (stat.isFile()) {
+      return stat.size;
+    }
+
+    if (!stat.isDirectory()) {
+      return 0;
+    }
+
+    return fs.readdirSync(targetPath).reduce((total, entryName) => total + getPathSize(join(targetPath, entryName)), 0);
+  }
+
+  function getDatabaseBytes() {
+    return [filename, `${filename}-wal`, `${filename}-shm`].reduce((total, path) => total + getPathSize(path), 0);
+  }
+
+  function readStorageUsage(autoCaptureDirectory = ""): StorageUsageSnapshot {
+    const databaseBytes = getDatabaseBytes();
+    const imageBytes = getPathSize(imageCaptureDirectory);
+    const thumbnailBytes = getPathSize(imageThumbnailDirectory);
+    const autoCaptureBytes = autoCaptureDirectory ? getPathSize(autoCaptureDirectory) : 0;
+
+    return {
+      databaseBytes,
+      imageBytes,
+      thumbnailBytes,
+      autoCaptureBytes,
+      totalBytes: databaseBytes + imageBytes + thumbnailBytes + autoCaptureBytes,
+    };
+  }
+
+  function normalizeStoragePath(targetPath: string) {
+    return resolve(targetPath).toLowerCase();
+  }
+
+  function getReferencedStoragePaths() {
+    const referencedPaths = new Set<string>();
+    const imageRows = db
+      .prepare("select source_path as sourcePath, thumbnail_path as thumbnailPath from items where kind = 'image'")
+      .all() as Array<{ sourcePath: string; thumbnailPath: string }>;
+    const autoCaptureRows = db
+      .prepare("select image_path as imagePath, thumbnail_path as thumbnailPath from auto_capture_entries")
+      .all() as Array<{ imagePath: string; thumbnailPath: string }>;
+
+    imageRows.forEach((row) => {
+      [row.sourcePath, row.thumbnailPath].filter(Boolean).forEach((path) => referencedPaths.add(normalizeStoragePath(path)));
+    });
+    autoCaptureRows.forEach((row) => {
+      [row.imagePath, row.thumbnailPath].filter(Boolean).forEach((path) => referencedPaths.add(normalizeStoragePath(path)));
+    });
+
+    return referencedPaths;
+  }
+
+  function collectFiles(directory: string): string[] {
+    if (!directory || !fs.existsSync(directory)) {
+      return [];
+    }
+
+    const stat = getPathStat(directory);
+    if (!stat?.isDirectory()) {
+      return [];
+    }
+
+    return fs.readdirSync(directory).flatMap((entryName) => {
+      const targetPath = join(directory, entryName);
+      const entryStat = getPathStat(targetPath);
+      if (!entryStat) {
+        return [];
+      }
+
+      if (entryStat.isDirectory()) {
+        return collectFiles(targetPath);
+      }
+
+      return entryStat.isFile() ? [targetPath] : [];
+    });
+  }
+
+  function cleanupOrphanedStorageFiles(autoCaptureDirectory = ""): StorageCleanupResult {
+    const referencedPaths = getReferencedStoragePaths();
+    const directories = [imageCaptureDirectory, imageThumbnailDirectory, autoCaptureDirectory].filter(Boolean);
+    const uniqueFiles = Array.from(new Set(directories.flatMap((directory) => collectFiles(directory))));
+    let removedFiles = 0;
+    let removedBytes = 0;
+
+    uniqueFiles.forEach((filePath) => {
+      if (referencedPaths.has(normalizeStoragePath(filePath))) {
+        return;
+      }
+
+      const fileBytes = getPathSize(filePath);
+      try {
+        fs.rmSync(filePath, { force: true });
+        removedFiles += 1;
+        removedBytes += fileBytes;
+      } catch {
+        // Cleanup is best-effort; a locked file should not block the rest.
+      }
+    });
+
+    return {
+      usage: readStorageUsage(autoCaptureDirectory),
+      removedFiles,
+      removedBytes,
+    };
+  }
+
+  function searchLocal(query: string, limit = 8): LocalSearchSnapshot {
+    const trimmedQuery = query.trim();
+    const safeLimit = Math.max(1, Math.min(50, Math.round(limit || 8)));
+    if (!trimmedQuery) {
+      return {
+        query: "",
+        results: [],
+      };
+    }
+
+    const workbench = readWorkbenchSnapshot();
+    const boxesById = new Map(workbench.boxes.map((box) => [box.id, box]));
+    const workbenchResults = workbench.items
+      .filter((item) => item.bundleParentId == null)
+      .filter((item) => {
+        const box = boxesById.get(item.boxId);
+        return matchesNormalizedSearch(
+          [
+            item.title,
+            item.content,
+            item.sourceUrl,
+            item.sourcePath,
+            box?.name,
+            getItemKindLabel(item.kind),
+            item.createdAt,
+            item.updatedAt,
+          ],
+          trimmedQuery
+        );
+      })
+      .map((item) => {
+        const box = boxesById.get(item.boxId);
+        const title = item.title.trim() || getItemKindLabel(item.kind);
+        return {
+          id: `workbench:${item.id}`,
+          source: "workbench" as const,
+          title,
+          preview: getSearchPreview(
+            [item.content, item.sourceUrl, item.sourcePath, item.title],
+            getItemKindLabel(item.kind)
+          ),
+          boxId: item.boxId,
+          boxName: box?.name ?? "未知盒子",
+          item,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        };
+      });
+
+    const autoCaptureResults = readAutoCaptureSnapshot(trimmedQuery).entries.map((entry) => {
+      const formattedTime = formatLocalDateTime(entry.createdAt);
+      return {
+        id: `auto-capture:${entry.id}`,
+        source: "autoCapture" as const,
+        title: `自动记录 ${formattedTime}`,
+        preview: getSearchPreview([entry.ocrText, entry.imagePath], "暂无 OCR 文本"),
+        entry,
+        createdAt: entry.createdAt,
+      };
+    });
+
+    return {
+      query: trimmedQuery,
+      results: [...workbenchResults, ...autoCaptureResults]
+        .sort((left, right) => {
+          const leftTime = new Date(left.source === "workbench" ? left.updatedAt : left.createdAt).getTime();
+          const rightTime = new Date(right.source === "workbench" ? right.updatedAt : right.createdAt).getTime();
+          if (rightTime !== leftTime) {
+            return rightTime - leftTime;
+          }
+          return right.id.localeCompare(left.id);
+        })
+        .slice(0, safeLimit),
+    };
+  }
+
   function readWorkbenchSnapshot(): WorkbenchSnapshot {
     const boxes = db
       .prepare(
@@ -158,35 +590,26 @@ export function createStore(filename: string): DesktopStore {
       .all() as Box[];
     const rawItems = db
       .prepare(
-        "select items.id, items.box_id as boxId, items.bundle_parent_item_id as bundleParentId, items.kind, items.title, items.content, items.source_url as sourceUrl, items.source_path as sourcePath, coalesce(bundle_entry_counts.bundleEntryCount, 0) as bundleEntryCount, items.sort_order as sortOrder, items.created_at as createdAt, items.updated_at as updatedAt from items left join (select bundle_item_id, count(*) as bundleEntryCount from bundle_entries group by bundle_item_id) bundle_entry_counts on bundle_entry_counts.bundle_item_id = items.id order by items.box_id asc, coalesce(items.bundle_parent_item_id, items.id) asc, items.sort_order asc, items.id desc"
+        "select items.id, items.box_id as boxId, items.bundle_parent_item_id as bundleParentId, items.kind, items.title, items.content, items.source_url as sourceUrl, items.source_path as sourcePath, items.thumbnail_path as thumbnailPath, coalesce(bundle_entry_counts.bundleEntryCount, 0) as bundleEntryCount, items.sort_order as sortOrder, items.created_at as createdAt, items.updated_at as updatedAt from items left join (select bundle_item_id, count(*) as bundleEntryCount from bundle_entries group by bundle_item_id) bundle_entry_counts on bundle_entry_counts.bundle_item_id = items.id order by items.box_id asc, coalesce(items.bundle_parent_item_id, items.id) asc, items.sort_order asc, items.id desc"
       )
-      .all() as Array<Item & { bundleParentId: number | null; bundleEntryCount: number }>;
+      .all() as Array<Item & { bundleParentId: number | null; bundleEntryCount: number; thumbnailPath: string }>;
     const bundleChildCounts = rawItems.reduce<Record<number, number>>((counts, item) => {
       if (item.bundleParentId != null) {
         counts[item.bundleParentId] = (counts[item.bundleParentId] ?? 0) + 1;
       }
       return counts;
     }, {});
-    const items = rawItems.map(({ bundleEntryCount, ...item }) => ({
+    const items = rawItems.map(({ bundleEntryCount, thumbnailPath, ...item }) => ({
       ...item,
       bundleParentId: item.bundleParentId ?? null,
+      thumbnailUrl: item.kind === "image" && thumbnailPath ? getImageDisplayUrl(thumbnailPath) : undefined,
       bundleCount: bundleEntryCount + (bundleChildCounts[item.id] ?? 0),
     })) as Item[];
     const panelStateRow = db
-      .prepare(
-        "select selected_box_id as selectedBoxId, quick_panel_open as quickPanelOpen, simple_mode as simpleMode, always_on_top as alwaysOnTop, simple_mode_view as simpleModeView, floating_ball_x as floatingBallX, floating_ball_y as floatingBallY, floating_ball_width as floatingBallWidth, floating_ball_height as floatingBallHeight from panel_state where id = 1"
-      )
+      .prepare("select selected_box_id as selectedBoxId from panel_state where id = 1")
       .get() as
       | {
           selectedBoxId: number | null;
-          quickPanelOpen: number;
-          simpleMode: number;
-          alwaysOnTop: number;
-          simpleModeView: string | null;
-          floatingBallX: number | null;
-          floatingBallY: number | null;
-          floatingBallWidth: number | null;
-          floatingBallHeight: number | null;
         }
       | undefined;
 
@@ -196,77 +619,198 @@ export function createStore(filename: string): DesktopStore {
       panelState: panelStateRow
         ? {
             selectedBoxId: panelStateRow.selectedBoxId,
-            quickPanelOpen: Boolean(panelStateRow.quickPanelOpen),
-            simpleMode: Boolean(panelStateRow.simpleMode),
-            alwaysOnTop: Boolean(panelStateRow.alwaysOnTop),
-            simpleModeView:
-              panelStateRow.simpleModeView === "panel"
-                ? "panel"
-                : panelStateRow.simpleModeView === "box"
-                  ? "box"
-                  : "ball",
-            floatingBallBounds:
-              panelStateRow.floatingBallX == null ||
-              panelStateRow.floatingBallY == null ||
-              panelStateRow.floatingBallWidth == null ||
-              panelStateRow.floatingBallHeight == null
-                ? null
-                : {
-                    x: panelStateRow.floatingBallX,
-                    y: panelStateRow.floatingBallY,
-                    width: panelStateRow.floatingBallWidth,
-                    height: panelStateRow.floatingBallHeight,
-                  },
           }
         : {
             selectedBoxId: boxes[0]?.id ?? null,
-            quickPanelOpen: true,
-            simpleMode: false,
-            alwaysOnTop: false,
-            simpleModeView: "ball",
-            floatingBallBounds: null,
           },
     };
   }
 
-  function writePanelState(
-    selectedBoxId: number | null,
-    quickPanelOpen: boolean,
-    simpleMode: boolean,
-    alwaysOnTop: boolean,
-    simpleModeView: SimpleModeView,
-    floatingBallBounds: WindowBounds | null
-  ) {
-    db.prepare(`
-      insert or replace into panel_state (id, selected_box_id, quick_panel_open, simple_mode, always_on_top, simple_mode_view, floating_ball_x, floating_ball_y, floating_ball_width, floating_ball_height)
-      values (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      selectedBoxId,
-      quickPanelOpen ? 1 : 0,
-      simpleMode ? 1 : 0,
-      alwaysOnTop ? 1 : 0,
-      simpleModeView,
-      floatingBallBounds?.x ?? null,
-      floatingBallBounds?.y ?? null,
-      floatingBallBounds?.width ?? null,
-      floatingBallBounds?.height ?? null
+  function readNotepadSnapshot(): NotepadSnapshot {
+    const groups = db
+      .prepare(
+        "select id, name, sort_order as sortOrder, created_at as createdAt, updated_at as updatedAt from notepad_groups order by sort_order asc, id asc"
+      )
+      .all() as NotepadSnapshot["groups"];
+    const notes = db
+      .prepare(
+        "select id, group_id as groupId, content, sort_order as sortOrder, created_at as createdAt, updated_at as updatedAt from notepad_notes order by group_id asc, sort_order asc, id desc"
+      )
+      .all() as NotepadSnapshot["notes"];
+
+    return { groups, notes };
+  }
+
+  function readAutoCaptureSnapshot(query = ""): AutoCaptureSnapshot {
+    const normalizedQuery = query.trim().toLowerCase();
+    const rows = db
+      .prepare(
+        `select id, image_path as imagePath, thumbnail_path as thumbnailPath, ocr_text as ocrText, created_at as createdAt
+         from auto_capture_entries
+         order by created_at desc, id desc`
+      )
+      .all() as Array<Omit<AutoCaptureSnapshot["entries"][number], "imageUrl" | "thumbnailUrl"> & { thumbnailPath: string }>;
+    const entries = rows
+      .filter((entry) => {
+        return !normalizedQuery || matchesNormalizedSearch([entry.ocrText, entry.imagePath, entry.createdAt], query);
+      })
+      .map((entry) => ({
+        ...entry,
+        imageUrl: getImageDisplayUrl(entry.imagePath),
+        thumbnailUrl: getImageDisplayUrl(entry.thumbnailPath || entry.imagePath),
+      }));
+
+    return {
+      entries,
+      running: false,
+      paused: true,
+      pauseReason: "manual",
+      intervalMs: 60_000,
+      lastError: "",
+      ocrAvailable: false,
+      ocrStatus: "",
+    };
+  }
+
+  function getAutoCaptureEntryPaths(entryId?: number) {
+    if (entryId != null) {
+      const rows = db
+        .prepare("select image_path as imagePath, thumbnail_path as thumbnailPath from auto_capture_entries where id = ?")
+        .all(entryId) as Array<{ imagePath: string; thumbnailPath: string }>;
+      return rows.flatMap((row) => [row.imagePath, row.thumbnailPath].filter(Boolean));
+    }
+
+    const rows = db
+      .prepare(
+        "select image_path as imagePath, thumbnail_path as thumbnailPath from auto_capture_entries order by created_at desc, id desc"
+      )
+      .all() as Array<{ imagePath: string; thumbnailPath: string }>;
+    return rows.flatMap((row) => [row.imagePath, row.thumbnailPath].filter(Boolean));
+  }
+
+  function pruneAutoCaptureEntriesBefore(cutoffIso: string) {
+    const trimmedCutoff = cutoffIso.trim();
+    if (!trimmedCutoff) {
+      return [];
+    }
+
+    const removedRows = db
+      .prepare(
+        `select image_path as imagePath, thumbnail_path as thumbnailPath
+         from auto_capture_entries
+         where created_at < ?`
+      )
+      .all(trimmedCutoff) as Array<{ imagePath: string; thumbnailPath: string }>;
+
+    db.prepare("delete from auto_capture_entries where created_at < ?").run(trimmedCutoff);
+
+    return removedRows.flatMap((row) => [row.imagePath, row.thumbnailPath].filter(Boolean));
+  }
+
+  function migrateImageDataUrlsToFiles() {
+    const rows = db
+      .prepare(
+        "select id, title, content, source_path as sourcePath from items where kind = 'image' and content like 'data:image/%'"
+      )
+      .all() as Array<{ id: number; title: string; content: string; sourcePath: string }>;
+    if (rows.length === 0) {
+      return;
+    }
+
+    const updateImage = db.prepare("update items set content = ?, source_path = ?, thumbnail_path = ?, updated_at = ? where id = ?");
+    rows.forEach((row) => {
+      const fingerprint = buildFingerprint("image", row.content);
+      const imagePath = saveImageDataUrl(row.content, row.title || `image-${row.id}`, fingerprint, row.id);
+      if (!imagePath) {
+        return;
+      }
+
+      const thumbnailPath = createImageThumbnail(imagePath);
+      updateImage.run(pathToFileURL(imagePath).href, imagePath, thumbnailPath, nowIso(), row.id);
+    });
+  }
+
+  function ensureImageItemThumbnails() {
+    const rows = db
+      .prepare(
+        "select id, source_path as sourcePath from items where kind = 'image' and source_path != '' and thumbnail_path = ''"
+      )
+      .all() as Array<{ id: number; sourcePath: string }>;
+    if (rows.length === 0) {
+      return;
+    }
+
+    const updateThumbnail = db.prepare("update items set thumbnail_path = ?, updated_at = ? where id = ?");
+    rows.forEach((row) => {
+      const thumbnailPath = createImageThumbnail(row.sourcePath);
+      if (thumbnailPath) {
+        updateThumbnail.run(thumbnailPath, nowIso(), row.id);
+      }
+    });
+  }
+
+  function ensureAutoCaptureThumbnails() {
+    const rows = db
+      .prepare(
+        "select id, image_path as imagePath from auto_capture_entries where image_path != '' and thumbnail_path = ''"
+      )
+      .all() as Array<{ id: number; imagePath: string }>;
+    if (rows.length === 0) {
+      return;
+    }
+
+    const updateThumbnail = db.prepare("update auto_capture_entries set thumbnail_path = ? where id = ?");
+    rows.forEach((row) => {
+      const thumbnailPath = createImageThumbnail(row.imagePath);
+      if (thumbnailPath) {
+        updateThumbnail.run(thumbnailPath, row.id);
+      }
+    });
+  }
+
+  function getNextNotepadGroupSortOrder() {
+    const snapshot = readNotepadSnapshot();
+    return snapshot.groups.reduce((highest, group) => Math.max(highest, group.sortOrder), -1) + 1;
+  }
+
+  function getNextNotepadNoteSortOrder(groupId: number) {
+    const row = db
+      .prepare("select min(sort_order) as sortOrder from notepad_notes where group_id = ?")
+      .get(groupId) as { sortOrder: number | null } | undefined;
+    return (row?.sortOrder ?? 1) - 1;
+  }
+
+  function ensureNotepadGroup(groupId: number) {
+    return readNotepadSnapshot().groups.some((group) => group.id === groupId);
+  }
+
+  function hasCaptureDuplicate(boxId: number, fingerprint: string) {
+    const existing = db
+      .prepare(
+        "select id from items where box_id = ? and capture_fingerprint = ? limit 1"
+      )
+      .get(boxId, fingerprint) as { id: number } | undefined;
+    return Boolean(existing);
+  }
+
+  function hasBundleEntryDuplicate(boxId: number, entryPath: string) {
+    const existing = db
+      .prepare(
+        "select bundle_entries.id from bundle_entries inner join items on items.id = bundle_entries.bundle_item_id where items.box_id = ? and items.bundle_parent_item_id is null and lower(bundle_entries.entry_path) = ? limit 1"
+      )
+      .get(boxId, entryPath.toLowerCase()) as { id: number } | undefined;
+    return Boolean(existing);
+  }
+
+  function hasDroppedPathDuplicate(boxId: number, entryPath: string) {
+    return (
+      hasCaptureDuplicate(boxId, buildDroppedPathFingerprint(entryPath)) ||
+      hasBundleEntryDuplicate(boxId, entryPath)
     );
   }
 
-  function getPanelStateDefaults(snapshot = readWorkbenchSnapshot()): PanelStateDefaults {
-    return {
-      selectedBoxId: snapshot.panelState.selectedBoxId ?? snapshot.boxes[0]?.id ?? null,
-      quickPanelOpen: snapshot.panelState.quickPanelOpen,
-      simpleMode: Boolean(snapshot.panelState.simpleMode),
-      alwaysOnTop: Boolean(snapshot.panelState.alwaysOnTop),
-      simpleModeView:
-        snapshot.panelState.simpleModeView === "panel"
-          ? "panel"
-          : snapshot.panelState.simpleModeView === "box"
-            ? "box"
-            : "ball",
-      floatingBallBounds: snapshot.panelState.floatingBallBounds ?? null,
-    };
+  function writePanelState(selectedBoxId: number | null) {
+    db.prepare("insert or replace into panel_state (id, selected_box_id) values (1, ?)").run(selectedBoxId);
   }
 
   function getTargetBoxId() {
@@ -385,15 +929,31 @@ export function createStore(filename: string): DesktopStore {
     }
 
     const timestamp = nowIso();
+    const seenFingerprints = new Set<string>();
+    const uniquePaths = cleanedPaths.filter((entryPath) => {
+      const fingerprint = buildDroppedPathFingerprint(entryPath);
+      if (seenFingerprints.has(fingerprint)) {
+        return false;
+      }
+      seenFingerprints.add(fingerprint);
+      return !hasDroppedPathDuplicate(targetBoxId, entryPath);
+    });
+    if (!uniquePaths.length) {
+      return readWorkbenchSnapshot();
+    }
+
+    const shouldBundle = uniquePaths.length > 1 || uniquePaths.some(isLikelyFolderPath);
+    const fingerprint = shouldBundle
+      ? buildFingerprint("bundle", uniquePaths.map((entryPath) => entryPath.toLowerCase()).join("\n"))
+      : buildDroppedPathFingerprint(uniquePaths[0]);
     const sortOrder = getNextTopSortOrder(targetBoxId);
-    const shouldBundle = cleanedPaths.length > 1 || cleanedPaths.some(isLikelyFolderPath);
 
     if (!shouldBundle) {
-      const singlePath = cleanedPaths[0];
+      const singlePath = uniquePaths[0];
       const imagePath = isImagePath(singlePath);
       db.prepare(`
-        insert into items (box_id, kind, title, content, source_url, source_path, sort_order, created_at, updated_at)
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        insert into items (box_id, kind, title, content, source_url, source_path, thumbnail_path, capture_fingerprint, sort_order, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         targetBoxId,
         imagePath ? "image" : "file",
@@ -401,6 +961,8 @@ export function createStore(filename: string): DesktopStore {
         imagePath ? pathToFileURL(singlePath).href : singlePath,
         "",
         singlePath,
+        imagePath ? createImageThumbnail(singlePath) : "",
+        fingerprint,
         sortOrder,
         timestamp,
         timestamp
@@ -408,10 +970,10 @@ export function createStore(filename: string): DesktopStore {
       return readWorkbenchSnapshot();
     }
 
-    const summary = `${cleanedPaths.length} 个项目`;
+    const summary = `${uniquePaths.length} 个项目`;
     const result = db.prepare(`
-      insert into items (box_id, kind, title, content, source_url, source_path, sort_order, created_at, updated_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      insert into items (box_id, kind, title, content, source_url, source_path, capture_fingerprint, sort_order, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       targetBoxId,
       "bundle",
@@ -419,6 +981,7 @@ export function createStore(filename: string): DesktopStore {
       summary,
       "",
       "",
+      fingerprint,
       sortOrder,
       timestamp,
       timestamp
@@ -430,7 +993,7 @@ export function createStore(filename: string): DesktopStore {
       values (?, ?, ?, ?)
     `);
 
-    cleanedPaths.forEach((entryPath, index) => {
+    uniquePaths.forEach((entryPath, index) => {
       insertEntry.run(bundleItemId, entryPath, isLikelyFolderPath(entryPath) ? "folder" : "file", index);
     });
 
@@ -445,11 +1008,16 @@ export function createStore(filename: string): DesktopStore {
 
     const isLink = isHttpUrl(trimmed);
     const timestamp = nowIso();
+    const fingerprint = buildFingerprint("text", trimmed);
+    if (hasCaptureDuplicate(targetBoxId, fingerprint)) {
+      return readWorkbenchSnapshot();
+    }
+
     const sortOrder = getNextTopSortOrder(targetBoxId);
 
     db.prepare(`
-      insert into items (box_id, kind, title, content, source_url, source_path, sort_order, created_at, updated_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      insert into items (box_id, kind, title, content, source_url, source_path, capture_fingerprint, sort_order, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       targetBoxId,
       isLink ? "link" : "text",
@@ -457,6 +1025,7 @@ export function createStore(filename: string): DesktopStore {
       isLink ? trimmed : trimmed,
       isLink ? trimmed : "",
       "",
+      fingerprint,
       sortOrder,
       timestamp,
       timestamp
@@ -473,18 +1042,30 @@ export function createStore(filename: string): DesktopStore {
     }
 
     const timestamp = nowIso();
+    const fingerprint = buildFingerprint("image", trimmedDataUrl);
+    if (hasCaptureDuplicate(targetBoxId, fingerprint)) {
+      return readWorkbenchSnapshot();
+    }
+
+    const imagePath = saveImageDataUrl(trimmedDataUrl, trimmedTitle || "粘贴图片", fingerprint);
+    const content = imagePath ? pathToFileURL(imagePath).href : trimmedDataUrl;
+    const sourceUrl = !imagePath && isHttpUrl(trimmedDataUrl) ? trimmedDataUrl : "";
+    const sourcePath = imagePath ?? "";
+    const thumbnailPath = imagePath ? createImageThumbnail(imagePath) : "";
     const sortOrder = getNextTopSortOrder(targetBoxId);
 
     db.prepare(`
-      insert into items (box_id, kind, title, content, source_url, source_path, sort_order, created_at, updated_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      insert into items (box_id, kind, title, content, source_url, source_path, thumbnail_path, capture_fingerprint, sort_order, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       targetBoxId,
       "image",
       trimmedTitle || "粘贴图片",
-      trimmedDataUrl,
-      "",
-      "",
+      content,
+      sourceUrl,
+      sourcePath,
+      thumbnailPath,
+      fingerprint,
       sortOrder,
       timestamp,
       timestamp
@@ -493,19 +1074,79 @@ export function createStore(filename: string): DesktopStore {
     return readWorkbenchSnapshot();
   }
 
+  migrateImageDataUrlsToFiles();
+  ensureImageItemThumbnails();
+  ensureAutoCaptureThumbnails();
+
   return {
     getWorkbenchSnapshot: readWorkbenchSnapshot,
-    setAlwaysOnTop(enabled: boolean): WorkbenchSnapshot {
-      const panelState = getPanelStateDefaults();
-      writePanelState(
-        panelState.selectedBoxId,
-        panelState.quickPanelOpen,
-        panelState.simpleMode,
-        enabled,
-        panelState.simpleModeView,
-        panelState.floatingBallBounds
+    getNotepadSnapshot: readNotepadSnapshot,
+    getAutoCaptureSnapshot: readAutoCaptureSnapshot,
+    addAutoCaptureEntry(imagePath: string, ocrText: string): AutoCaptureSnapshot {
+      const trimmedPath = imagePath.trim();
+      if (!trimmedPath) {
+        return readAutoCaptureSnapshot();
+      }
+
+      const timestamp = nowIso();
+      const thumbnailPath = createImageThumbnail(trimmedPath);
+      db.prepare("insert into auto_capture_entries (image_path, thumbnail_path, ocr_text, created_at) values (?, ?, ?, ?)").run(
+        trimmedPath,
+        thumbnailPath,
+        ocrText.trim(),
+        timestamp
       );
-      return readWorkbenchSnapshot();
+      return readAutoCaptureSnapshot();
+    },
+    pruneAutoCaptureEntriesBefore,
+    deleteAutoCaptureEntry(entryId: number): AutoCaptureSnapshot {
+      db.prepare("delete from auto_capture_entries where id = ?").run(entryId);
+      return readAutoCaptureSnapshot();
+    },
+    clearAutoCaptureEntries(): AutoCaptureSnapshot {
+      db.prepare("delete from auto_capture_entries").run();
+      return readAutoCaptureSnapshot();
+    },
+    getAutoCaptureEntryPath(entryId: number): string | null {
+      const row = db
+        .prepare("select image_path as imagePath from auto_capture_entries where id = ?")
+        .get(entryId) as { imagePath: string } | undefined;
+      return row?.imagePath ?? null;
+    },
+    getAutoCaptureEntryPaths,
+    getStorageUsage: readStorageUsage,
+    cleanupOrphanedStorageFiles,
+    searchLocal,
+    createNotepadGroup(name: string): NotepadSnapshot {
+      const trimmed = name.trim();
+      if (!trimmed) {
+        return readNotepadSnapshot();
+      }
+
+      const timestamp = nowIso();
+      db.prepare("insert into notepad_groups (name, sort_order, created_at, updated_at) values (?, ?, ?, ?)").run(
+        trimmed,
+        getNextNotepadGroupSortOrder(),
+        timestamp,
+        timestamp
+      );
+      return readNotepadSnapshot();
+    },
+    createNotepadNote(groupId: number, content: string): NotepadSnapshot {
+      const trimmed = content.trim();
+      if (!trimmed || !ensureNotepadGroup(groupId)) {
+        return readNotepadSnapshot();
+      }
+
+      const timestamp = nowIso();
+      db.prepare("insert into notepad_notes (group_id, content, sort_order, created_at, updated_at) values (?, ?, ?, ?, ?)").run(
+        groupId,
+        trimmed,
+        getNextNotepadNoteSortOrder(groupId),
+        timestamp,
+        timestamp
+      );
+      return readNotepadSnapshot();
     },
     captureTextOrLink(input: string): WorkbenchSnapshot {
       return persistTextOrLink(input, getTargetBoxId());
@@ -535,16 +1176,7 @@ export function createStore(filename: string): DesktopStore {
         .prepare("insert into boxes (name, color, description, sort_order) values (?, ?, ?, ?)")
         .run(trimmed, nextBoxColor(), "", getNextBoxSortOrder()) as { lastInsertRowid: number | bigint };
       const boxId = Number(result.lastInsertRowid);
-      const panelState = getPanelStateDefaults();
-
-      writePanelState(
-        boxId,
-        panelState.quickPanelOpen,
-        panelState.simpleMode,
-        panelState.alwaysOnTop,
-        panelState.simpleModeView,
-        panelState.floatingBallBounds
-      );
+      writePanelState(boxId);
 
       return readWorkbenchSnapshot();
     },
@@ -617,15 +1249,7 @@ export function createStore(filename: string): DesktopStore {
 
       const nextSelectedBoxId =
         snapshot.panelState.selectedBoxId === boxId ? fallbackBox.id : snapshot.panelState.selectedBoxId;
-      const panelState = getPanelStateDefaults(snapshot);
-      writePanelState(
-        nextSelectedBoxId,
-        panelState.quickPanelOpen,
-        panelState.simpleMode,
-        panelState.alwaysOnTop,
-        panelState.simpleModeView,
-        panelState.floatingBallBounds
-      );
+      writePanelState(nextSelectedBoxId);
 
       return readWorkbenchSnapshot();
     },
@@ -915,16 +1539,70 @@ export function createStore(filename: string): DesktopStore {
         return snapshot;
       }
 
-      const panelState = getPanelStateDefaults(snapshot);
-      writePanelState(
-        boxId,
-        panelState.quickPanelOpen,
-        panelState.simpleMode,
-        panelState.alwaysOnTop,
-        panelState.simpleModeView,
-        panelState.floatingBallBounds
-      );
+      writePanelState(boxId);
 
+      return readWorkbenchSnapshot();
+    },
+    applyAiOrganization(suggestions: AiOrganizationSuggestion[]): WorkbenchSnapshot {
+      const snapshot = readWorkbenchSnapshot();
+      const timestamp = nowIso();
+      const boxIdsByName = new Map(snapshot.boxes.map((box) => [box.name.trim().toLowerCase(), box.id]));
+      const insertBox = db.prepare("insert into boxes (name, color, description, sort_order) values (?, ?, ?, ?)");
+      const updateTitle = db.prepare(`
+        update items
+        set title = ?, updated_at = ?
+        where id = ?
+      `);
+      const updateItemBox = db.prepare(`
+        update items
+        set box_id = ?, sort_order = ?, updated_at = ?
+        where id = ?
+      `);
+      const updateBundleChildrenBox = db.prepare(`
+        update items
+        set box_id = ?, updated_at = ?
+        where bundle_parent_item_id = ?
+      `);
+
+      for (const suggestion of suggestions) {
+        const targetName = suggestion.targetBoxName.trim();
+        if (!targetName) {
+          continue;
+        }
+
+        const key = targetName.toLowerCase();
+        if (!boxIdsByName.has(key)) {
+          const result = insertBox.run(targetName, nextBoxColor(), "", getNextBoxSortOrder()) as {
+            lastInsertRowid: number | bigint;
+          };
+          boxIdsByName.set(key, Number(result.lastInsertRowid));
+        }
+      }
+
+      const latestSnapshot = readWorkbenchSnapshot();
+      const itemsById = new Map(latestSnapshot.items.map((item) => [item.id, item]));
+
+      for (const suggestion of suggestions) {
+        const item = itemsById.get(suggestion.itemId);
+        if (!item) {
+          continue;
+        }
+
+        const nextTitle = suggestion.suggestedTitle.trim();
+        if (nextTitle && nextTitle !== item.title) {
+          updateTitle.run(nextTitle, timestamp, item.id);
+        }
+
+        const targetBoxId = boxIdsByName.get(suggestion.targetBoxName.trim().toLowerCase());
+        if (targetBoxId && targetBoxId !== item.boxId) {
+          updateItemBox.run(targetBoxId, getNextTopSortOrder(targetBoxId), timestamp, item.id);
+          if (item.kind === "bundle") {
+            updateBundleChildrenBox.run(targetBoxId, timestamp, item.id);
+          }
+        }
+      }
+
+      normalizeBoxSortOrders();
       return readWorkbenchSnapshot();
     },
     getBundleEntries(bundleItemId: number): BundleEntry[] {
@@ -956,11 +1634,3 @@ export function createStore(filename: string): DesktopStore {
     },
   };
 }
-  type PanelStateDefaults = {
-    selectedBoxId: number | null;
-    quickPanelOpen: boolean;
-    simpleMode: boolean;
-    alwaysOnTop: boolean;
-    simpleModeView: SimpleModeView;
-    floatingBallBounds: WindowBounds | null;
-  };

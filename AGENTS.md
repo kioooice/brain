@@ -1,33 +1,44 @@
 # AGENTS.md - Workspace Guide
 
-This workspace is `brain`, a local Flask app for collecting and organizing inspirations.
-It inherits the global default workflow from `C:\Users\Administrator\.codex\AGENTS.md` and then adds project-specific guidance below.
+This workspace is `brain`, an Electron desktop app for collecting and organizing inspirations locally.
+This file is the project-level guide. When it conflicts with broader/global instructions, prefer this file for work inside this repository.
 
-## Every Session
+## Default Style
 
-Before making changes:
+- Keep replies short, direct, and product-focused.
+- Do not turn routine development into a process report.
+- Do not repeat packaging, installer, runtime, or skipped-test disclaimers unless they are directly relevant to the task.
+- Do not ask for permission to continue normal feature development; keep moving until there is a real decision or risk.
+- Give the user something concrete to try after meaningful UI or workflow changes.
 
-1. Read `SOUL.md`.
-2. Read `USER.md`.
-3. Read `MEMORY.md`.
-4. Read `HEARTBEAT.md`.
-5. Check `README.md`, `app.py`, and the relevant templates or tests.
+## Context
 
-## Working Style
+- Read `SOUL.md`, `USER.md`, `MEMORY.md`, and `HEARTBEAT.md` when starting a new session, resuming old work, or when context is unclear.
+- For small localized edits, read only the files needed for the task.
+- Use `MEMORY.md` for durable facts and preferences, but do not echo memory notes in every response.
+- Update memory files only when the change adds stable project context.
 
+## Development
+
+- Desktop work lives under `desktop/`.
+- Desktop dev runs from `desktop/` with `npm start`.
+- The old Flask web app has been removed; do not add new capture work there.
 - Keep the vibe fast, visual, and practical.
 - Prefer shipping small improvements over building abstract systems.
 - Preserve the existing app shape unless there is a clear reason to change it.
 - When touching UI, keep it simple and polished.
 - When touching behavior, verify the path from input to storage to rendering.
 
-## Project Notes
+## Verification
 
-- Local dev runs on `http://localhost:5001`.
-- Use `dev.bat` for source-mode iteration.
-- Use `python app.py` when you just need a direct local run.
+- For behavior changes, run the focused test first, then `npm run lint` and `npm test` when practical.
+- For pure documentation or instruction edits, no app test is required.
+- Mention only verification that was actually run.
 
-## Memory
+## Reporting
 
-Use `MEMORY.md` for durable context, preferences, and project notes.
-Use `HEARTBEAT.md` for periodic review and cleanup reminders.
+- Final replies should usually be 3-8 short lines.
+- Lead with what changed and what the user can now do.
+- Include changed files only when useful.
+- Give next-step options only when there is a real choice.
+- If the next step is obvious, state the recommended next step in one sentence.

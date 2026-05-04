@@ -1,5 +1,13 @@
 import { DragEvent, type CSSProperties, type SyntheticEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Box, BundleEntry, ClearBoxItemsKind, Item, ItemKind } from "../shared/types";
+import type {
+  AiOrganizationSuggestion,
+  Box,
+  BundleEntry,
+  ClearBoxItemsKind,
+  Item,
+  ItemKind,
+} from "../shared/types";
+import { DROP_VISUAL, getCardDragStatusText } from "./drag-feedback";
 
 const DRAGGED_ITEM_MIME = "application/x-brain-item-id";
 const MASONRY_ROW_HEIGHT = 8;
@@ -150,6 +158,15 @@ function getCompactFilePath(path: string) {
   return normalizedSegments.slice(-3).join(" / ");
 }
 
+function getUrlDomain(url: string) {
+  try {
+    const hostname = new URL(url).hostname.trim();
+    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+  } catch {
+    return "";
+  }
+}
+
 function getBundlePreviewKinds(items: Item[]) {
   return Array.from(new Set(items.map((item) => (item.kind === "file" ? getFileExtensionLabel(item) : getItemKindLabel(item.kind))))).slice(0, 3);
 }
@@ -172,6 +189,10 @@ function getBundleMemberPreviewText(item: Item) {
   }
 
   return item.content || item.title;
+}
+
+function getImageThumbnailSrc(item: Item) {
+  return item.thumbnailUrl || item.content;
 }
 
 function getBundleTilePreviewText(item: Item) {
@@ -199,6 +220,14 @@ function getBundleDisplayTitle(item: Item, bundleItems: Item[]) {
 
 function getBundleAccessibleName(item: Item, bundleItems: Item[]) {
   return getBundleDisplayTitle(item, bundleItems) || `组合 #${item.id}`;
+}
+
+function getItemAccessibleName(item: Item, bundleItemsByItem: Record<number, Item[]>) {
+  if (item.kind === "bundle") {
+    return getBundleAccessibleName(item, bundleItemsByItem[item.id] ?? []);
+  }
+
+  return item.title.trim() || getItemKindLabel(item.kind);
 }
 
 function getBundlePreviewMembers(items: Item[]) {
@@ -591,6 +620,7 @@ function buildBundleAiHtml(bundleName: string, records: BundleExtractionRecord[]
 
 type MainCanvasProps = {
   box: Box | undefined;
+  boxes?: Box[];
   items: Item[];
   bundleEntriesByItem?: Record<number, BundleEntry[]>;
   bundleItemsByItem?: Record<number, Item[]>;
@@ -598,6 +628,7 @@ type MainCanvasProps = {
   onPreviewImage?: (item: Item) => void;
   onRenameBox?: (boxId: number, name: string, description: string) => Promise<void>;
   onClearBoxItems?: (boxId: number, kind: ClearBoxItemsKind) => Promise<void>;
+  onDeleteItem?: (itemId: number) => Promise<void>;
   onRenameItem?: (itemId: number, title: string) => Promise<void>;
   onRemoveBundleEntry?: (itemId: number, entryPath: string) => Promise<void>;
   onGroupItems?: (sourceItemId: number, targetItemId: number) => Promise<void>;
@@ -605,12 +636,22 @@ type MainCanvasProps = {
   onOpenExternal?: (url: string) => Promise<void>;
   onCopyText?: (text: string) => Promise<void>;
   onExportBundleAi?: (bundleName: string, html: string) => Promise<void>;
+  onMoveItemToBox?: (itemId: number, boxId: number) => Promise<void>;
+  onMoveItemsToBox?: (itemIds: number[], boxId: number) => Promise<void>;
+  onDeleteItems?: (itemIds: number[]) => Promise<void>;
   onMoveItemToIndex?: (itemId: number, targetIndex: number) => Promise<void>;
   onLoadBundleEntries?: (itemId: number) => Promise<void>;
+  aiOrganizationSuggestions?: AiOrganizationSuggestion[];
+  aiOrganizing?: boolean;
+  aiApplying?: boolean;
+  onSuggestAiOrganization?: (boxId: number) => Promise<void>;
+  onApplyAiOrganization?: (suggestions: AiOrganizationSuggestion[]) => Promise<void>;
+  onClearAiOrganizationSuggestions?: () => void;
 };
 
 export function MainCanvas({
   box,
+  boxes = [],
   items,
   bundleEntriesByItem = {},
   bundleItemsByItem = {},
@@ -618,14 +659,24 @@ export function MainCanvas({
   onPreviewImage = () => undefined,
   onRenameBox = async () => undefined,
   onClearBoxItems = async () => undefined,
+  onDeleteItem = async () => undefined,
   onRenameItem = async () => undefined,
   onGroupItems = async () => undefined,
   onOpenPath = async () => undefined,
   onOpenExternal = async () => undefined,
   onCopyText = async () => undefined,
   onExportBundleAi = async () => undefined,
+  onMoveItemToBox = async () => undefined,
+  onMoveItemsToBox,
+  onDeleteItems,
   onMoveItemToIndex = async () => undefined,
   onLoadBundleEntries = async () => undefined,
+  aiOrganizationSuggestions = [],
+  aiOrganizing = false,
+  aiApplying = false,
+  onSuggestAiOrganization = async () => undefined,
+  onApplyAiOrganization = async () => undefined,
+  onClearAiOrganizationSuggestions = () => undefined,
 }: MainCanvasProps) {
   const [loadingBundleIds, setLoadingBundleIds] = useState<Record<number, boolean>>({});
   const [bundleErrors, setBundleErrors] = useState<Record<number, string>>({});
@@ -642,13 +693,25 @@ export function MainCanvas({
   const [kindFilter, setKindFilter] = useState<"all" | ItemKind>("all");
   const [dateFilter, setDateFilter] = useState("");
   const [clearKind, setClearKind] = useState<ClearBoxItemsKind>("all");
+  const [batchPanelOpen, setBatchPanelOpen] = useState(false);
+  const [batchSelectionActive, setBatchSelectionActive] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(() => new Set());
+  const [batchMoveTargetBoxId, setBatchMoveTargetBoxId] = useState<number | null>(null);
   const [selectionModeItemId, setSelectionModeItemId] = useState<number | null>(null);
+  const [activeCardActionMenuId, setActiveCardActionMenuId] = useState<number | null>(null);
+  const [activeCardActionMenuPlacement, setActiveCardActionMenuPlacement] = useState<{
+    top: number;
+    right: number;
+  } | null>(null);
   const [previewedBundleItem, setPreviewedBundleItem] = useState<Item | null>(null);
   const [extractedBundleItemId, setExtractedBundleItemId] = useState<number | null>(null);
   const stackRefs = useRef(new Map<number, HTMLDivElement>());
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const hasActiveFilters = normalizedQuery.length > 0 || kindFilter !== "all" || Boolean(dateFilter);
+  const aiSuggestionsForVisibleItems = aiOrganizationSuggestions.filter((suggestion) =>
+    items.some((item) => item.id === suggestion.itemId)
+  );
 
   const filteredItems = useMemo(
     () =>
@@ -687,6 +750,18 @@ export function MainCanvas({
     [bundleItemsByItem]
   );
   const draggingBundleMember = draggedItemId != null && bundledItemIds.has(draggedItemId);
+  const allCanvasItems = useMemo(() => [...items, ...Object.values(bundleItemsByItem).flat()], [bundleItemsByItem, items]);
+  const draggedOverItem =
+    draggedOverItemId != null ? allCanvasItems.find((item) => item.id === draggedOverItemId) ?? null : null;
+  const selectedItemCount = selectedItemIds.size;
+  const batchMoveTargetBoxes = boxes.filter((targetBox) => targetBox.id !== box?.id);
+  const dragStatusText =
+    draggedItemId == null
+      ? ""
+      : getCardDragStatusText({
+          targetIndex: draggedOverIndex,
+          targetItemName: draggedOverItem ? getItemAccessibleName(draggedOverItem, bundleItemsByItem) : null,
+        });
 
   useEffect(() => {
     const visibleIds = new Set(filteredItems.map((item) => item.id));
@@ -705,6 +780,14 @@ export function MainCanvas({
       }
 
       return Object.fromEntries(nextEntries);
+    });
+  }, [filteredItems]);
+
+  useEffect(() => {
+    const visibleIds = new Set(filteredItems.map((item) => item.id));
+    setSelectedItemIds((current) => {
+      const next = new Set(Array.from(current).filter((itemId) => visibleIds.has(itemId)));
+      return next.size === current.size ? current : next;
     });
   }, [filteredItems]);
 
@@ -730,12 +813,14 @@ export function MainCanvas({
   useEffect(() => {
     function handlePreviewDismiss(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        setActiveCardActionMenuId(null);
+        setActiveCardActionMenuPlacement(null);
         setPreviewedBundleItem(null);
         setExtractedBundleItemId(null);
       }
     }
 
-    if (!previewedBundleItem && extractedBundleItemId == null) {
+    if (!previewedBundleItem && extractedBundleItemId == null && activeCardActionMenuId == null) {
       return;
     }
 
@@ -743,7 +828,28 @@ export function MainCanvas({
     return () => {
       window.removeEventListener("keydown", handlePreviewDismiss);
     };
-  }, [previewedBundleItem, extractedBundleItemId]);
+  }, [previewedBundleItem, extractedBundleItemId, activeCardActionMenuId]);
+
+  useEffect(() => {
+    if (activeCardActionMenuId == null) {
+      return;
+    }
+
+    function handleDocumentMouseDown(event: MouseEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".card-action-menu")) {
+        return;
+      }
+
+      setActiveCardActionMenuId(null);
+      setActiveCardActionMenuPlacement(null);
+    }
+
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+    };
+  }, [activeCardActionMenuId]);
 
   useLayoutEffect(() => {
     const cleanupCallbacks: Array<() => void> = [];
@@ -1052,6 +1158,98 @@ export function MainCanvas({
     await onClearBoxItems(box.id, clearKind);
   }
 
+  function startBatchSelection() {
+    setBatchSelectionActive(true);
+  }
+
+  function clearBatchSelection() {
+    setBatchSelectionActive(false);
+    setSelectedItemIds(new Set());
+    setBatchMoveTargetBoxId(null);
+  }
+
+  function toggleSelectedItem(itemId: number) {
+    setSelectedItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }
+
+  function selectAllFilteredItems() {
+    setSelectedItemIds(new Set(filteredItems.map((item) => item.id)));
+  }
+
+  function invertFilteredSelection() {
+    setSelectedItemIds((current) => {
+      const next = new Set(current);
+      filteredItems.forEach((item) => {
+        if (next.has(item.id)) {
+          next.delete(item.id);
+        } else {
+          next.add(item.id);
+        }
+      });
+      return next;
+    });
+  }
+
+  function clearSelectedItems() {
+    setSelectedItemIds(new Set());
+  }
+
+  function getSelectedVisibleItemIds() {
+    return filteredItems.map((item) => item.id).filter((itemId) => selectedItemIds.has(itemId));
+  }
+
+  async function handleMoveSelectedItemsToBox() {
+    if (batchMoveTargetBoxId == null || selectedItemCount === 0) {
+      return;
+    }
+
+    const selectedVisibleItemIds = getSelectedVisibleItemIds();
+
+    if (onMoveItemsToBox) {
+      await onMoveItemsToBox(selectedVisibleItemIds, batchMoveTargetBoxId);
+    } else {
+      for (const itemId of selectedVisibleItemIds) {
+        await onMoveItemToBox(itemId, batchMoveTargetBoxId);
+      }
+    }
+
+    clearBatchSelection();
+  }
+
+  async function handleDeleteSelectedItems() {
+    if (selectedItemCount === 0) {
+      return;
+    }
+
+    const selectedVisibleItemIds = getSelectedVisibleItemIds();
+    if (selectedVisibleItemIds.length === 0) {
+      clearBatchSelection();
+      return;
+    }
+
+    if (!window.confirm(`确定删除选中的 ${selectedVisibleItemIds.length} 张卡片吗？`)) {
+      return;
+    }
+
+    if (onDeleteItems) {
+      await onDeleteItems(selectedVisibleItemIds);
+    } else {
+      for (const itemId of selectedVisibleItemIds) {
+        await onDeleteItem(itemId);
+      }
+    }
+
+    clearBatchSelection();
+  }
+
   const extractedBundleItem =
     extractedBundleItemId != null ? items.find((entry) => entry.id === extractedBundleItemId) ?? null : null;
   const extractedBundleItems = extractedBundleItem ? bundleItemsByItem[extractedBundleItem.id] ?? [] : [];
@@ -1085,7 +1283,7 @@ export function MainCanvas({
         >
           <img
             className="bundle-item-preview-image"
-            src={item.content}
+            src={getImageThumbnailSrc(item)}
             alt={item.title || "组合图片预览"}
             draggable={false}
           />
@@ -1139,6 +1337,183 @@ export function MainCanvas({
       <div className="bundle-item-preview-body">
         {shouldShowPreviewTitle(item) ? <h2>{item.title}</h2> : null}
         <p>{getBundleMemberPreviewText(item)}</p>
+      </div>
+    );
+  }
+
+  function renderCardActionMenu(item: Item, cardAccessibleName: string, textCardCopy: string) {
+    const isOpen = activeCardActionMenuId === item.id;
+
+    function closeMenu() {
+      setActiveCardActionMenuId(null);
+      setActiveCardActionMenuPlacement(null);
+    }
+
+    return (
+      <div
+        className="card-action-menu"
+        draggable={false}
+        onDragStart={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
+        <button
+          type="button"
+          className="card-action-menu-button"
+          aria-label={`操作 ${cardAccessibleName}`}
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          onClick={(event) => {
+            if (isOpen) {
+              closeMenu();
+              return;
+            }
+
+            const buttonRect = event.currentTarget.getBoundingClientRect();
+            setActiveCardActionMenuPlacement({
+              top: Math.round(buttonRect.bottom + 6),
+              right: Math.max(12, Math.round(window.innerWidth - buttonRect.right)),
+            });
+            setActiveCardActionMenuId(item.id);
+          }}
+        >
+          操作
+        </button>
+        {isOpen ? (
+          <div
+            className="card-action-menu-popover"
+            role="menu"
+            aria-label={`${cardAccessibleName} 操作`}
+            style={
+              activeCardActionMenuPlacement
+                ? {
+                    position: "fixed",
+                    top: `${activeCardActionMenuPlacement.top}px`,
+                    right: `${activeCardActionMenuPlacement.right}px`,
+                  }
+                : undefined
+            }
+          >
+            {item.kind === "text" ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="card-action-menu-item"
+                  onClick={() => {
+                    closeMenu();
+                    void onCopyText(textCardCopy);
+                  }}
+                >
+                  复制文本内容
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="card-action-menu-item"
+                  onClick={() => {
+                    closeMenu();
+                    setPreviewedBundleItem(item);
+                  }}
+                >
+                  查看全文
+                </button>
+              </>
+            ) : null}
+            {item.kind === "link" && item.sourceUrl ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="card-action-menu-item"
+                  onClick={() => {
+                    closeMenu();
+                    void onCopyText(item.sourceUrl);
+                  }}
+                >
+                  复制链接
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="card-action-menu-item"
+                  onClick={() => {
+                    closeMenu();
+                    setPreviewedBundleItem(item);
+                  }}
+                >
+                  查看链接详情
+                </button>
+              </>
+            ) : null}
+            {item.kind === "file" && item.sourcePath ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="card-action-menu-item"
+                  onClick={() => {
+                    closeMenu();
+                    void onCopyText(item.sourcePath);
+                  }}
+                >
+                  复制路径
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="card-action-menu-item"
+                  onClick={() => {
+                    closeMenu();
+                    setPreviewedBundleItem(item);
+                  }}
+                >
+                  查看文件详情
+                </button>
+              </>
+            ) : null}
+            {item.kind === "image" && item.content ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="card-action-menu-item"
+                onClick={() => {
+                  closeMenu();
+                  onPreviewImage(item);
+                }}
+              >
+                查看图片
+              </button>
+            ) : null}
+            {item.kind === "bundle" ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="card-action-menu-item"
+                onClick={() => {
+                  closeMenu();
+                  void handleBundleExtractOpen(item);
+                }}
+              >
+                内容提取
+              </button>
+            ) : null}
+            {isTitleEditable(item.kind) ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="card-action-menu-item"
+                onClick={() => {
+                  closeMenu();
+                  startRenaming(item);
+                }}
+              >
+                重命名
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -1214,7 +1589,7 @@ export function MainCanvas({
           >
             <img
               className="bundle-extract-image-preview"
-              src={record.item.content}
+              src={getImageThumbnailSrc(record.item)}
               alt={record.title}
               draggable={false}
             />
@@ -1245,110 +1620,116 @@ export function MainCanvas({
 
   return (
     <main className="main-canvas">
-      <div className="canvas-topbar">
-        <header className="canvas-header">
-          <div className="canvas-header-copy">
-            {editingBoxName && box ? (
-              <form
-                className="canvas-box-rename-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void submitBoxRename();
-                }}
-              >
-                <input
-                  className="canvas-box-name-input"
-                  aria-label="编辑当前盒子名称"
-                  value={boxNameDraft}
-                  onChange={(event) => setBoxNameDraft(event.target.value)}
-                  autoFocus
-                />
-                <div className="card-inline-actions">
-                  <button type="submit" className="card-action-button" aria-label="保存当前盒子名称">
-                    保存
-                  </button>
-                  <button
-                    type="button"
-                    className="card-action-button"
-                    aria-label="取消当前盒子重命名"
-                    onClick={() => {
-                      setEditingBoxName(false);
-                      setBoxNameDraft(box.name);
-                    }}
-                  >
-                    取消
-                  </button>
-                </div>
-              </form>
-            ) : box ? (
-              <button
-                type="button"
-                className="canvas-title-button"
-                aria-label={`编辑当前盒子名称 ${box.name}`}
-                onClick={() => {
-                  setEditingBoxName(true);
-                  setBoxNameDraft(box.name);
-                }}
-              >
-                {box.name}
-              </button>
-            ) : (
-              <h1>未选择盒子</h1>
-            )}
-            <label className="canvas-filter-field canvas-search-field">
-              <span className="canvas-filter-label">搜索</span>
-              <input
-                className="canvas-filter-input"
-                aria-label="筛选当前盒子"
-                placeholder="搜索标题、内容或路径"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-            </label>
-          </div>
-        </header>
-        <div className="canvas-topbar-meta">
-          <p className="canvas-meta">
-            {hasActiveFilters ? `${filteredItems.length} / ${items.length}` : items.length} 张卡片
-          </p>
-          {onBackToWorkspace ? (
+      <section className="canvas-control-panel" aria-label="当前盒子控制区">
+        <div className="canvas-topbar">
+          <header className="canvas-header">
+            <div className="canvas-header-copy">
+              {onBackToWorkspace ? (
+                <button
+                  type="button"
+                  className="canvas-breadcrumb"
+                  aria-label="返回盒子总览"
+                  onClick={onBackToWorkspace}
+                >
+                  盒子总览
+                </button>
+              ) : null}
+              {editingBoxName && box ? (
+                <form
+                  className="canvas-box-rename-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submitBoxRename();
+                  }}
+                >
+                  <input
+                    className="canvas-box-name-input"
+                    aria-label="编辑当前盒子名称"
+                    value={boxNameDraft}
+                    onChange={(event) => setBoxNameDraft(event.target.value)}
+                    autoFocus
+                  />
+                  <div className="card-inline-actions">
+                    <button type="submit" className="card-action-button" aria-label="保存当前盒子名称">
+                      保存
+                    </button>
+                    <button
+                      type="button"
+                      className="card-action-button"
+                      aria-label="取消当前盒子重命名"
+                      onClick={() => {
+                        setEditingBoxName(false);
+                        setBoxNameDraft(box.name);
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </form>
+              ) : box ? (
+                <button
+                  type="button"
+                  className="canvas-title-button"
+                  aria-label={`编辑当前盒子名称 ${box.name}`}
+                  onClick={() => {
+                    setEditingBoxName(true);
+                    setBoxNameDraft(box.name);
+                  }}
+                >
+                  {box.name}
+                </button>
+              ) : (
+                <h1>未选择盒子</h1>
+              )}
+            </div>
+          </header>
+          <div className="canvas-topbar-meta">
+            <p className="canvas-meta">
+              {hasActiveFilters ? `${filteredItems.length} / ${items.length}` : items.length} 张卡片
+            </p>
             <button
               type="button"
-              className="canvas-back-button"
-              aria-label="返回主界面"
-              onClick={onBackToWorkspace}
+              className="card-action-button canvas-ai-button"
+              aria-label="AI整理"
+              onClick={() => {
+                if (box) {
+                  void onSuggestAiOrganization(box.id);
+                }
+              }}
+              disabled={!box || items.length === 0 || aiOrganizing || aiApplying}
             >
-              返回
+              {aiOrganizing ? "整理中" : "AI整理"}
             </button>
-          ) : null}
+            <button
+              type="button"
+              className="card-action-button canvas-batch-button"
+              aria-expanded={batchPanelOpen}
+              aria-controls="canvas-batch-panel"
+              onClick={() => {
+                setBatchPanelOpen((current) => {
+                  if (current) {
+                    clearBatchSelection();
+                  }
+                  return !current;
+                });
+              }}
+            >
+              批量管理
+            </button>
+          </div>
         </div>
 
         <div className="canvas-toolbar" aria-label="当前盒子筛选">
-          <div className="canvas-clear-field" aria-label="清空当前盒子">
-            <label className="canvas-clear-select-label">
-              <span className="canvas-filter-label">清空</span>
-              <select
-                className="canvas-clear-select"
-                aria-label="选择清空类型"
-                value={clearKind}
-                onChange={(event) => setClearKind(event.target.value as ClearBoxItemsKind)}
-              >
-                {CLEAR_KIND_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="card-action-button destructive canvas-clear-button"
-              onClick={() => void handleClearBoxItems()}
-              disabled={!box || items.length === 0}
-            >
-              清空盒子
-            </button>
-          </div>
+          <label className="canvas-filter-field canvas-search-field">
+            <span className="canvas-filter-label">搜索</span>
+            <input
+              className="canvas-filter-input"
+              aria-label="筛选当前盒子"
+              placeholder="搜索标题、内容或路径"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </label>
           <div className="canvas-date-filter-field" aria-label="按日期筛选当前盒子">
             <label className="canvas-date-input-label">
               <span className="canvas-filter-label">日期</span>
@@ -1382,7 +1763,174 @@ export function MainCanvas({
             </div>
           </div>
         </div>
-      </div>
+
+        {batchPanelOpen ? (
+          <section id="canvas-batch-panel" className="canvas-batch-panel" aria-label="批量管理">
+            <div className="canvas-batch-panel-copy">
+              <strong>批量管理</strong>
+              <span>{batchSelectionActive ? `已选择 ${selectedItemCount} 张` : "未选择卡片"}</span>
+            </div>
+            <div className="canvas-batch-selection-group" aria-label="所选卡片操作">
+              <div className="canvas-batch-actions" aria-label="选择卡片操作">
+                {batchSelectionActive ? (
+                  <>
+                    <button type="button" className="card-action-button" onClick={clearBatchSelection}>
+                      取消选择
+                    </button>
+                    <button
+                      type="button"
+                      className="card-action-button canvas-batch-compact-button"
+                      aria-label="全选当前筛选结果"
+                      onClick={selectAllFilteredItems}
+                      disabled={filteredItems.length === 0}
+                    >
+                      全选当前
+                    </button>
+                    <button
+                      type="button"
+                      className="card-action-button canvas-batch-compact-button"
+                      aria-label="反选当前筛选结果"
+                      onClick={invertFilteredSelection}
+                      disabled={filteredItems.length === 0}
+                    >
+                      反选当前
+                    </button>
+                    <button
+                      type="button"
+                      className="card-action-button canvas-batch-compact-button"
+                      onClick={clearSelectedItems}
+                      disabled={selectedItemCount === 0}
+                    >
+                      清空选择
+                    </button>
+                    <button
+                      type="button"
+                      className="card-action-button destructive"
+                      onClick={() => void handleDeleteSelectedItems()}
+                      disabled={selectedItemCount === 0}
+                    >
+                      删除所选卡片
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="card-action-button"
+                    onClick={startBatchSelection}
+                    disabled={filteredItems.length === 0}
+                  >
+                    选择卡片
+                  </button>
+                )}
+              </div>
+              {batchSelectionActive && batchMoveTargetBoxes.length > 0 ? (
+                <div className="canvas-batch-move-field" aria-label="移动所选卡片">
+                  <label className="canvas-clear-select-label">
+                    <span className="canvas-filter-label">移动到</span>
+                    <select
+                      className="canvas-clear-select"
+                      aria-label="选择移动目标盒子"
+                      value={batchMoveTargetBoxId ?? ""}
+                      onChange={(event) => setBatchMoveTargetBoxId(Number(event.target.value) || null)}
+                    >
+                      <option value="">选择盒子</option>
+                      {batchMoveTargetBoxes.map((targetBox) => (
+                        <option key={targetBox.id} value={targetBox.id}>
+                          {targetBox.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="card-action-button canvas-batch-move-button"
+                    onClick={() => void handleMoveSelectedItemsToBox()}
+                    disabled={selectedItemCount === 0 || batchMoveTargetBoxId == null}
+                  >
+                    移动所选卡片
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <div className="canvas-batch-clear-group">
+              <div className="canvas-clear-field" aria-label="清空当前盒子">
+                <label className="canvas-clear-select-label">
+                  <span className="canvas-filter-label">清空范围</span>
+                  <select
+                    className="canvas-clear-select"
+                    aria-label="选择清空类型"
+                    value={clearKind}
+                    onChange={(event) => setClearKind(event.target.value as ClearBoxItemsKind)}
+                  >
+                    {CLEAR_KIND_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="card-action-button destructive canvas-clear-button"
+                  onClick={() => void handleClearBoxItems()}
+                  disabled={!box || items.length === 0}
+                >
+                  清空所选类型
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
+      </section>
+
+      {aiSuggestionsForVisibleItems.length > 0 ? (
+        <section className="ai-organization-panel" aria-label="AI 整理建议">
+          <div className="ai-organization-header">
+            <div>
+              <h2>AI 整理建议</h2>
+              <p>{aiSuggestionsForVisibleItems.length} 张卡片可归类或补标题</p>
+            </div>
+            <div className="ai-organization-actions">
+              <button
+                type="button"
+                className="card-action-button"
+                onClick={() => void onApplyAiOrganization(aiSuggestionsForVisibleItems)}
+                disabled={aiApplying}
+              >
+                {aiApplying ? "应用中" : "应用建议"}
+              </button>
+              <button
+                type="button"
+                className="card-action-button"
+                onClick={onClearAiOrganizationSuggestions}
+                disabled={aiApplying}
+              >
+                忽略
+              </button>
+            </div>
+          </div>
+          <div className="ai-organization-list">
+            {aiSuggestionsForVisibleItems.map((suggestion) => {
+              const item = items.find((entry) => entry.id === suggestion.itemId);
+              const titleChanged = item ? suggestion.suggestedTitle.trim() !== item.title.trim() : false;
+
+              return (
+                <article key={suggestion.itemId} className="ai-organization-item">
+                  <div>
+                    <strong>{item?.title || `#${suggestion.itemId}`}</strong>
+                    <p>{suggestion.reason}</p>
+                  </div>
+                  <div className="ai-organization-target">
+                    <span>{suggestion.createBox ? "新建" : "进入"}</span>
+                    <strong>{suggestion.targetBoxName}</strong>
+                    {titleChanged ? <em>标题：{suggestion.suggestedTitle}</em> : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {filteredItems.length === 0 ? (
         <section className="empty-state-panel" aria-label="当前盒子内容为空">
@@ -1396,6 +1944,13 @@ export function MainCanvas({
           </div>
         </section>
       ) : (
+        <>
+          {dragStatusText ? (
+            <div className="card-drag-status" role="status" aria-label="拖拽操作提示">
+              {dragStatusText}
+            </div>
+          ) : null}
+
         <section
           className="card-grid"
           aria-label="当前盒子内容"
@@ -1421,7 +1976,8 @@ export function MainCanvas({
             const bodyText = getBodyText(item);
             const textCardCopy = item.kind === "text" ? getTextCardCopy(item) : "";
             const imageAspectRatio = item.kind === "image" ? imageAspectRatios[item.id] : undefined;
-            const dragEnabled = !hasActiveFilters && selectionModeItemId !== item.id;
+            const selectedForBatch = selectedItemIds.has(item.id);
+            const dragEnabled = !batchSelectionActive && !hasActiveFilters && selectionModeItemId !== item.id;
             const stackRowSpan =
               stackRowSpans[item.id] ?? getFallbackStackRowSpan(item, textCardCopy.length, imageAspectRatio);
 
@@ -1437,7 +1993,7 @@ export function MainCanvas({
                 }}
                 className={getCardStackClass(item, textCardCopy.length, imageAspectRatio)}
                 data-row-span={stackRowSpan}
-                data-whitespace-drop-target={draggedOverIndex === index + 1 ? "true" : "false"}
+                data-drop-visual={draggedOverIndex === index + 1 ? DROP_VISUAL.sort : DROP_VISUAL.idle}
                 style={{ gridRowEnd: `span ${stackRowSpan}` }}
                 onDragOver={(event) => handleStackWhitespaceDragOver(index, event)}
                 onDrop={(event) => void handleStackWhitespaceDrop(index, event)}
@@ -1453,8 +2009,9 @@ export function MainCanvas({
               >
                 {!hasActiveFilters ? (
                   <div
-                    className={draggedOverIndex === index ? "card-drop-slot active" : "card-drop-slot"}
+                    className="card-drop-slot"
                     aria-label={`放到位置 ${index + 1}`}
+                    data-drop-visual={draggedOverIndex === index ? DROP_VISUAL.sort : DROP_VISUAL.idle}
                     onDragOver={(event) => handleDropZoneDragOver(index, event)}
                     onDragLeave={() => {
                       if (draggedOverIndex === index) {
@@ -1470,7 +2027,8 @@ export function MainCanvas({
                   aria-label={`卡片 ${cardAccessibleName}`}
                   draggable={dragEnabled}
                   data-dragging={draggedItemId === item.id ? "true" : "false"}
-                  data-group-target={draggedOverItemId === item.id ? "true" : "false"}
+                  data-selected={selectedForBatch ? "true" : "false"}
+                  data-drop-visual={draggedOverItemId === item.id ? DROP_VISUAL.group : DROP_VISUAL.idle}
                   onDragStart={(event) => handleCardDragStart(item.id, event)}
                   onDragEnd={handleCardDragEnd}
                   onDragOver={(event) => handleCardDragOver(item.id, event)}
@@ -1482,25 +2040,42 @@ export function MainCanvas({
                   onDrop={(event) => void handleCardDrop(item.id, event)}
                 >
                   <div className="card-topline">
+                    {batchSelectionActive ? (
+                      <label className="card-select-control">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择卡片 ${cardAccessibleName}`}
+                          checked={selectedForBatch}
+                          onChange={() => toggleSelectedItem(item.id)}
+                        />
+                      </label>
+                    ) : null}
                     <span className={item.kind === "file" ? "card-kind card-kind-file" : "card-kind"}>
                       {item.kind === "file" ? getFileExtensionLabel(item) : getItemKindLabel(item.kind)}
                     </span>
-                    <span className="card-id">#{item.id}</span>
+                    <div className="card-topline-actions">
+                      <span className="card-id">#{item.id}</span>
+                      {["text", "link", "file", "image", "bundle"].includes(item.kind)
+                        ? renderCardActionMenu(item, cardAccessibleName, textCardCopy)
+                        : null}
+                    </div>
                   </div>
 
                   {item.kind === "text" ? (
-                    <div
-                      className="card-copy selectable text-card-copy text-card-copy-clamped"
-                      draggable={false}
-                      onMouseDown={() => setSelectionModeItemId(item.id)}
-                      onMouseUp={() => setSelectionModeItemId(null)}
-                      onDragStart={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                    >
-                      <p>{textCardCopy}</p>
-                    </div>
+                    <>
+                      <div
+                        className="card-copy selectable text-card-copy text-card-copy-clamped"
+                        draggable={false}
+                        onMouseDown={() => setSelectionModeItemId(item.id)}
+                        onMouseUp={() => setSelectionModeItemId(null)}
+                        onDragStart={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                      >
+                        <p>{textCardCopy}</p>
+                      </div>
+                    </>
                   ) : isRenaming ? (
                     <form
                       className="card-rename-form"
@@ -1535,14 +2110,7 @@ export function MainCanvas({
                       </div>
                     </form>
                   ) : cardTitle ? (
-                    <button
-                      type="button"
-                      className="card-title-button"
-                      aria-label={`编辑 ${cardAccessibleName} 的标题`}
-                      onClick={() => startRenaming(item)}
-                    >
-                      {cardTitle}
-                    </button>
+                    <h2 className="card-title-static">{cardTitle}</h2>
                   ) : null}
 
                   {item.kind === "bundle" ? (
@@ -1590,7 +2158,7 @@ export function MainCanvas({
                                   {previewItem.kind === "image" && previewItem.content ? (
                                     <img
                                       className="bundle-preview-image"
-                                      src={previewItem.content}
+                                      src={getImageThumbnailSrc(previewItem)}
                                       alt={previewItem.title}
                                       draggable={false}
                                     />
@@ -1634,7 +2202,7 @@ export function MainCanvas({
                     >
                       <img
                         className="card-image-preview"
-                        src={item.content}
+                        src={getImageThumbnailSrc(item)}
                         alt={item.title}
                         onLoad={(event) => handleImagePreviewLoad(item.id, event)}
                       />
@@ -1642,47 +2210,61 @@ export function MainCanvas({
                   ) : null}
 
                   {item.kind === "link" && item.sourceUrl ? (
-                    <div
-                      className="card-copy selectable"
-                      draggable={false}
-                      onDragStart={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                    >
-                      <a
-                        className="card-link"
-                        href={item.sourceUrl}
-                        aria-label={`打开 ${item.sourceUrl}`}
-                        onClick={(event) => {
+                    <>
+                      <div
+                        className="card-copy card-link-source selectable"
+                        draggable={false}
+                        onDragStart={(event) => {
                           event.preventDefault();
-                          void onOpenExternal(item.sourceUrl);
+                          event.stopPropagation();
                         }}
                       >
-                        {item.sourceUrl}
-                      </a>
-                    </div>
+                        {getUrlDomain(item.sourceUrl) ? (
+                          <div className="card-source-line" aria-label={`来源 ${getUrlDomain(item.sourceUrl)}`}>
+                            <span>来源</span>
+                            <strong>{getUrlDomain(item.sourceUrl)}</strong>
+                          </div>
+                        ) : null}
+                        <a
+                          className="card-link"
+                          href={item.sourceUrl}
+                          aria-label={`打开 ${item.sourceUrl}`}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            void onOpenExternal(item.sourceUrl);
+                          }}
+                        >
+                          {item.sourceUrl}
+                        </a>
+                      </div>
+                    </>
                   ) : null}
 
                   {item.kind === "file" && item.sourcePath ? (
-                    <div
-                      className="card-copy card-copy-compact"
-                      draggable={false}
-                      onDragStart={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="card-path-button"
-                        aria-label={`打开 ${item.sourcePath}`}
-                        title={item.sourcePath}
-                        onClick={() => void onOpenPath(item.sourcePath)}
+                    <>
+                      <div
+                        className="card-copy card-copy-compact card-file-source"
+                        draggable={false}
+                        onDragStart={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
                       >
-                        <span className="card-path-copy">{getCompactFilePath(item.sourcePath)}</span>
-                      </button>
-                    </div>
+                        <div className="card-source-line" aria-label={`来源 ${item.sourcePath}`}>
+                          <span>来源</span>
+                          <strong>{getCompactFilePath(item.sourcePath)}</strong>
+                        </div>
+                        <button
+                          type="button"
+                          className="card-path-button"
+                          aria-label={`打开 ${item.sourcePath}`}
+                          title={item.sourcePath}
+                          onClick={() => void onOpenPath(item.sourcePath)}
+                        >
+                          <span className="card-path-copy">打开文件</span>
+                        </button>
+                      </div>
+                    </>
                   ) : null}
 
                   {!["text", "file", "link", "bundle", "image"].includes(item.kind) && bodyText ? (
@@ -1691,26 +2273,15 @@ export function MainCanvas({
                     </div>
                   ) : null}
 
-                  {item.kind === "bundle" ? (
-                    <div className="card-actions">
-                      <button
-                        type="button"
-                        className="card-action-button"
-                        aria-label={`提取 ${cardAccessibleName} 的内容`}
-                        onClick={() => void handleBundleExtractOpen(item)}
-                      >
-                        内容提取
-                      </button>
-                    </div>
-                  ) : null}
                 </article>
 
                 {!hasActiveFilters && index === filteredItems.length - 1 ? (
                   <div
-                    className={
-                      draggedOverIndex === filteredItems.length ? "card-drop-slot active" : "card-drop-slot"
-                    }
+                    className="card-drop-slot"
                     aria-label={`放到位置 ${filteredItems.length + 1}`}
+                    data-drop-visual={
+                      draggedOverIndex === filteredItems.length ? DROP_VISUAL.sort : DROP_VISUAL.idle
+                    }
                     onDragOver={(event) => handleDropZoneDragOver(filteredItems.length, event)}
                     onDragLeave={() => {
                       if (draggedOverIndex === filteredItems.length) {
@@ -1724,6 +2295,7 @@ export function MainCanvas({
             );
           })}
         </section>
+        </>
       )}
 
       {extractedBundleItem ? (

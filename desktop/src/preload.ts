@@ -1,11 +1,21 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC_CHANNELS } from "./shared/ipc";
 import type {
+  AiOrganizationResult,
+  AiOrganizationSuggestion,
+  AiProviderConfig,
+  AiProviderConfigInput,
+  AiProviderConnectionTestResult,
+  AutoCaptureSnapshot,
   BundleEntry,
   ClearBoxItemsKind,
   ClipboardCaptureBoxStatus,
   ClipboardCaptureIpcResult,
   ClipboardWatcherStatus,
+  LocalSearchSnapshot,
+  NotepadSnapshot,
+  StorageCleanupResult,
+  StorageUsageSnapshot,
   WorkbenchSnapshot,
 } from "./shared/types";
 
@@ -13,11 +23,67 @@ contextBridge.exposeInMainWorld("brainDesktop", {
   bootstrap(): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.bootstrap);
   },
+  getNotepadSnapshot(): Promise<NotepadSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getNotepadSnapshot);
+  },
+  createNotepadGroup(name: string): Promise<NotepadSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.createNotepadGroup, name);
+  },
+  createNotepadNote(groupId: number, content: string): Promise<NotepadSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.createNotepadNote, groupId, content);
+  },
+  getAutoCaptureSnapshot(query?: string): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getAutoCaptureSnapshot, query);
+  },
+  startAutoCapture(intervalMs?: number): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.startAutoCapture, intervalMs);
+  },
+  stopAutoCapture(): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.stopAutoCapture);
+  },
+  pauseAutoCaptureForPrivacy(): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.pauseAutoCaptureForPrivacy);
+  },
+  captureDesktopNow(): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.captureDesktopNow);
+  },
+  searchAutoCaptures(query: string): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.searchAutoCaptures, query);
+  },
+  deleteAutoCaptureEntry(entryId: number): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.deleteAutoCaptureEntry, entryId);
+  },
+  clearAutoCaptures(): Promise<AutoCaptureSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clearAutoCaptures);
+  },
+  getStorageUsage(): Promise<StorageUsageSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getStorageUsage);
+  },
+  cleanupExpiredAutoCaptures(): Promise<StorageCleanupResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.cleanupExpiredAutoCaptures);
+  },
+  cleanupOrphanedStorageFiles(): Promise<StorageCleanupResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.cleanupOrphanedStorageFiles);
+  },
+  searchLocal(query: string, limit?: number): Promise<LocalSearchSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.searchLocal, query, limit);
+  },
+  onAutoCaptureChanged(handler: (snapshot: AutoCaptureSnapshot) => void): () => void {
+    const listener = (_event: unknown, snapshot: AutoCaptureSnapshot) => handler(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.autoCaptureChanged, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.autoCaptureChanged, listener);
+    };
+  },
   getPathsForFiles(files: File[]): string[] {
     return files.map((file) => webUtils.getPathForFile(file)).filter((path) => path.trim().length > 0);
   },
-  setAlwaysOnTop(enabled: boolean): Promise<WorkbenchSnapshot> {
-    return ipcRenderer.invoke(IPC_CHANNELS.setAlwaysOnTop, enabled);
+  onClipboardCapture(handler: (result: ClipboardCaptureIpcResult) => void): () => void {
+    const listener = (_event: unknown, result: ClipboardCaptureIpcResult) => handler(result);
+    ipcRenderer.on(IPC_CHANNELS.clipboardCaptureChanged, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.clipboardCaptureChanged, listener);
+    };
   },
   captureClipboardNow(): Promise<ClipboardCaptureIpcResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.captureClipboardNow);
@@ -96,6 +162,21 @@ contextBridge.exposeInMainWorld("brainDesktop", {
   },
   enrichLinkTitle(itemId: number, url: string): Promise<WorkbenchSnapshot | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.enrichLinkTitle, itemId, url);
+  },
+  suggestAiOrganization(boxId: number): Promise<AiOrganizationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.suggestAiOrganization, boxId);
+  },
+  applyAiOrganization(suggestions: AiOrganizationSuggestion[]): Promise<WorkbenchSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.applyAiOrganization, suggestions);
+  },
+  getAiProviderConfig(): Promise<AiProviderConfig> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getAiProviderConfig);
+  },
+  saveAiProviderConfig(input: AiProviderConfigInput): Promise<AiProviderConfig> {
+    return ipcRenderer.invoke(IPC_CHANNELS.saveAiProviderConfig, input);
+  },
+  testAiProviderConnection(input: AiProviderConfigInput): Promise<AiProviderConnectionTestResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.testAiProviderConnection, input);
   },
   moveItemToBox(itemId: number, boxId: number): Promise<WorkbenchSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.moveItemToBox, itemId, boxId);

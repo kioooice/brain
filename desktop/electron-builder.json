@@ -1,0 +1,28 @@
+{
+  "appId": "local.openclaw.brain",
+  "productName": "Brain Desktop",
+  "directories": {
+    "output": "../.desktop-out/make/nsis",
+    "buildResources": "assets"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "assets/brain.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "allowElevation": true,
+    "perMachine": false,
+    "runAfterFinish": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Brain Desktop",
+    "artifactName": "${productName} Setup ${version}.${ext}"
+  }
+}

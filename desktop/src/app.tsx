@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "./components/app-shell";
 import { IPC_CHANNELS } from "./shared/ipc";
-import type { BundleEntry, ClearBoxItemsKind, Item, WorkbenchSnapshot } from "./shared/types";
+import { redactSensitiveText } from "./shared/sensitive-redaction";
+import type {
+  AiOrganizationSuggestion,
+  AiProviderConfig,
+  AiProviderConfigInput,
+  AiProviderConnectionTestResult,
+  AutoCaptureSnapshot,
+  BundleEntry,
+  ClearBoxItemsKind,
+  Item,
+  LocalSearchResult,
+  NotepadSnapshot,
+  StorageCleanupResult,
+  StorageUsageSnapshot,
+  WorkbenchSnapshot,
+} from "./shared/types";
 
 type Toast = {
   id: number;
@@ -13,6 +28,7 @@ type Toast = {
 
 const TOAST_DURATION_MS = 2400;
 const DELETE_COMMIT_DELAY_MS = 4000;
+const LOCAL_SEARCH_RESULT_LIMIT = 8;
 
 function isMissingIpcHandlerError(cause: unknown, channel: string) {
   return cause instanceof Error && cause.message.includes(`No handler registered for '${channel}'`);
@@ -47,12 +63,50 @@ function isImageLikeUrl(value: string) {
   }
 }
 
+function getSafeErrorMessage(cause: unknown, fallback: string, explicitSecrets: Array<string | null | undefined> = []) {
+  return cause instanceof Error ? redactSensitiveText(cause.message, explicitSecrets) : fallback;
+}
+
+function getTopLevelItemCount(snapshot: WorkbenchSnapshot) {
+  return snapshot.items.filter((item) => item.bundleParentId == null).length;
+}
+
+function getBoxName(snapshot: WorkbenchSnapshot, boxId: number | null | undefined) {
+  return snapshot.boxes.find((box) => box.id === boxId)?.name ?? "当前盒子";
+}
+
+function getRecentStagingBoxId(snapshot: WorkbenchSnapshot | null) {
+  return snapshot?.boxes[0]?.id ?? null;
+}
+
+function getCapturedItemCount(item: Item) {
+  return item.kind === "bundle" && item.bundleCount > 0 ? item.bundleCount : 1;
+}
+
+function getStorageCleanupMessage(result: StorageCleanupResult) {
+  if (result.removedFiles === 0) {
+    return "没有可清理的文件";
+  }
+
+  return `已清理 ${result.removedFiles} 个文件`;
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<WorkbenchSnapshot | null>(null);
+  const [notepadSnapshot, setNotepadSnapshot] = useState<NotepadSnapshot | null>(null);
+  const [autoCaptureSnapshot, setAutoCaptureSnapshot] = useState<AutoCaptureSnapshot | null>(null);
   const [bundleEntriesByItem, setBundleEntriesByItem] = useState<Record<number, BundleEntry[]>>({});
   const [dropError, setDropError] = useState("");
   const [clipboardWatcherRunning, setClipboardWatcherRunning] = useState(false);
-  const [clipboardCaptureBoxId, setClipboardCaptureBoxId] = useState<number | null>(null);
+  const [aiOrganizationSuggestions, setAiOrganizationSuggestions] = useState<AiOrganizationSuggestion[]>([]);
+  const [aiOrganizing, setAiOrganizing] = useState(false);
+  const [aiApplying, setAiApplying] = useState(false);
+  const [aiProviderConfig, setAiProviderConfig] = useState<AiProviderConfig | null>(null);
+  const [aiTestingConnection, setAiTestingConnection] = useState(false);
+  const [storageUsage, setStorageUsage] = useState<StorageUsageSnapshot | null>(null);
+  const [storageMaintaining, setStorageMaintaining] = useState(false);
+  const [localSearchResults, setLocalSearchResults] = useState<LocalSearchResult[] | null>(null);
+  const [localSearchLoading, setLocalSearchLoading] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pendingDeleteItems, setPendingDeleteItems] = useState<Record<number, Item>>({});
   const nextToastIdRef = useRef(1);
@@ -72,11 +126,13 @@ export function App() {
       }
       const defaultBoxId = loadedSnapshot.boxes[0]?.id ?? null;
       if (defaultBoxId != null) {
-        void window.brainDesktop.setClipboardCaptureBox(defaultBoxId).then((status) => {
-          if (active) {
-            setClipboardCaptureBoxId(status.boxId);
-          }
-        });
+        void window.brainDesktop.setClipboardCaptureBox(defaultBoxId).catch(() => undefined);
+      }
+    });
+
+    window.brainDesktop.getNotepadSnapshot().then((loadedNotepadSnapshot) => {
+      if (active) {
+        setNotepadSnapshot(loadedNotepadSnapshot);
       }
     });
 
@@ -85,6 +141,33 @@ export function App() {
         setClipboardWatcherRunning(status.running);
       }
     });
+
+    window.brainDesktop
+      .getAutoCaptureSnapshot()
+      .then((loadedAutoCaptureSnapshot) => {
+        if (active) {
+          setAutoCaptureSnapshot(loadedAutoCaptureSnapshot);
+        }
+      })
+      .catch(() => undefined);
+
+    window.brainDesktop
+      .getAiProviderConfig()
+      .then((config) => {
+        if (active) {
+          setAiProviderConfig(config);
+        }
+      })
+      .catch(() => undefined);
+
+    window.brainDesktop
+      .getStorageUsage()
+      .then((usage) => {
+        if (active) {
+          setStorageUsage(usage);
+        }
+      })
+      .catch(() => undefined);
 
     return () => {
       active = false;
@@ -100,6 +183,20 @@ export function App() {
     }, 3000);
 
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    return window.brainDesktop.onClipboardCapture?.((result) => {
+      if (result.snapshot) {
+        setSnapshot(result.snapshot);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.brainDesktop.onAutoCaptureChanged?.((nextSnapshot) => {
+      setAutoCaptureSnapshot(nextSnapshot);
+    });
   }, []);
 
   useEffect(() => {
@@ -151,6 +248,55 @@ export function App() {
     return id;
   }
 
+  function reportCaptureFeedback(
+    previousSnapshot: WorkbenchSnapshot | null,
+    nextSnapshot: WorkbenchSnapshot,
+    targetBoxId?: number,
+    attemptedCount = 1
+  ) {
+    if (!previousSnapshot) {
+      return;
+    }
+
+    const previousItemCount = getTopLevelItemCount(previousSnapshot);
+    const nextItemCount = getTopLevelItemCount(nextSnapshot);
+
+    if (nextItemCount > previousItemCount) {
+      const previousItemIds = new Set(previousSnapshot.items.map((item) => item.id));
+      const createdItems = nextSnapshot.items.filter(
+        (item) => item.bundleParentId == null && !previousItemIds.has(item.id)
+      );
+      const createdItem = createdItems[0] ?? nextSnapshot.items.find((item) => item.bundleParentId == null);
+      const createdCount =
+        createdItems.length > 0
+          ? createdItems.reduce((count, item) => count + getCapturedItemCount(item), 0)
+          : 1;
+      const skippedCount = Math.max(attemptedCount - createdCount, 0);
+      const boxName = getBoxName(
+        nextSnapshot,
+        createdItem?.boxId ?? targetBoxId ?? nextSnapshot.panelState.selectedBoxId
+      );
+      if (skippedCount > 0) {
+        const message = `已收集 ${createdCount} 个到 ${boxName}，跳过 ${skippedCount} 个`;
+        pushToast({ message });
+        return;
+      }
+      const message = createdCount > 1 ? `已收集 ${createdCount} 个到 ${boxName}` : `已收集到 ${boxName}`;
+      pushToast({
+        message,
+      });
+      return;
+    }
+
+    if (nextItemCount === previousItemCount) {
+      const message = attemptedCount > 1 ? `重复内容，已跳过 ${attemptedCount} 个` : "重复内容，已跳过";
+      pushToast({
+        message,
+        duration: 2200,
+      });
+    }
+  }
+
   function clearPendingDeletes(itemIds: number[]) {
     setPendingDeleteItems((current) => {
       const next = { ...current };
@@ -187,12 +333,15 @@ export function App() {
       return false;
     }
 
+    const previousSnapshot = snapshotRef.current ?? snapshot;
+    const targetBoxId = boxId ?? getRecentStagingBoxId(previousSnapshot);
     const title = deriveImageTitleFromUrl(input);
     const nextSnapshot =
-      boxId == null
+      targetBoxId == null
         ? await window.brainDesktop.captureImageData(input, title)
-        : await window.brainDesktop.captureImageDataIntoBox(input, title, boxId);
+        : await window.brainDesktop.captureImageDataIntoBox(input, title, targetBoxId);
     setSnapshot(nextSnapshot);
+    reportCaptureFeedback(previousSnapshot, nextSnapshot, targetBoxId);
     return true;
   }
 
@@ -202,11 +351,14 @@ export function App() {
       return;
     }
 
+    const previousSnapshot = snapshotRef.current ?? snapshot;
+    const targetBoxId = boxId ?? getRecentStagingBoxId(previousSnapshot);
     const nextSnapshot =
-      boxId == null
+      targetBoxId == null
         ? await window.brainDesktop.captureTextOrLink(input)
-        : await window.brainDesktop.captureTextOrLinkIntoBox(input, boxId);
+        : await window.brainDesktop.captureTextOrLinkIntoBox(input, targetBoxId);
     setSnapshot(nextSnapshot);
+    reportCaptureFeedback(previousSnapshot, nextSnapshot, targetBoxId);
 
     const createdItem = nextSnapshot.items[0];
     if (createdItem?.kind !== "link" || !createdItem.sourceUrl) {
@@ -222,21 +374,28 @@ export function App() {
     }
   }
 
-  async function handleQuickCapture(input: string) {
+  async function handleCaptureText(input: string) {
     await captureTextLikeInput(input);
   }
 
-  async function handleQuickCaptureIntoBox(boxId: number, input: string) {
+  async function handleCaptureTextIntoBox(boxId: number, input: string) {
     await captureTextLikeInput(input, boxId);
   }
 
   async function handlePasteImage(dataUrl: string, title: string) {
     try {
-      const nextSnapshot = await window.brainDesktop.captureImageData(dataUrl, title);
+      const previousSnapshot = snapshotRef.current ?? snapshot;
+      const targetBoxId = getRecentStagingBoxId(previousSnapshot);
+      const nextSnapshot =
+        targetBoxId == null
+          ? await window.brainDesktop.captureImageData(dataUrl, title)
+          : await window.brainDesktop.captureImageDataIntoBox(dataUrl, title, targetBoxId);
       setSnapshot(nextSnapshot);
+      reportCaptureFeedback(previousSnapshot, nextSnapshot, targetBoxId ?? undefined);
     } catch (cause) {
       pushToast({
         message: isMissingIpcHandlerError(cause, IPC_CHANNELS.captureImageData)
+          || isMissingIpcHandlerError(cause, IPC_CHANNELS.captureImageDataIntoBox)
           ? "图片粘贴需要完整重启一次开发进程后才能使用"
           : "图片粘贴失败",
         tone: "error",
@@ -247,8 +406,14 @@ export function App() {
   async function handleDroppedImage(dataUrl: string, title: string) {
     try {
       setDropError("");
-      const nextSnapshot = await window.brainDesktop.captureImageData(dataUrl, title);
+      const previousSnapshot = snapshotRef.current ?? snapshot;
+      const targetBoxId = getRecentStagingBoxId(previousSnapshot);
+      const nextSnapshot =
+        targetBoxId == null
+          ? await window.brainDesktop.captureImageData(dataUrl, title)
+          : await window.brainDesktop.captureImageDataIntoBox(dataUrl, title, targetBoxId);
       setSnapshot(nextSnapshot);
+      reportCaptureFeedback(previousSnapshot, nextSnapshot, targetBoxId ?? undefined);
     } catch (cause) {
       setDropError(cause instanceof Error ? cause.message : "拖放失败");
     }
@@ -257,8 +422,10 @@ export function App() {
   async function handleDroppedImageIntoBox(boxId: number, dataUrl: string, title: string) {
     try {
       setDropError("");
+      const previousSnapshot = snapshotRef.current ?? snapshot;
       const nextSnapshot = await window.brainDesktop.captureImageDataIntoBox(dataUrl, title, boxId);
       setSnapshot(nextSnapshot);
+      reportCaptureFeedback(previousSnapshot, nextSnapshot, boxId);
     } catch (cause) {
       setDropError(cause instanceof Error ? cause.message : "拖放失败");
     }
@@ -267,8 +434,14 @@ export function App() {
   async function handleDroppedPaths(paths: string[]) {
     try {
       setDropError("");
-      const nextSnapshot = await window.brainDesktop.captureDroppedPaths(paths);
+      const previousSnapshot = snapshotRef.current ?? snapshot;
+      const targetBoxId = getRecentStagingBoxId(previousSnapshot);
+      const nextSnapshot =
+        targetBoxId == null
+          ? await window.brainDesktop.captureDroppedPaths(paths)
+          : await window.brainDesktop.captureDroppedPathsIntoBox(paths, targetBoxId);
       setSnapshot(nextSnapshot);
+      reportCaptureFeedback(previousSnapshot, nextSnapshot, targetBoxId ?? undefined, paths.length);
     } catch (cause) {
       setDropError(cause instanceof Error ? cause.message : "拖放失败");
     }
@@ -277,14 +450,17 @@ export function App() {
   async function handleDroppedPathsIntoBox(boxId: number, paths: string[]) {
     try {
       setDropError("");
+      const previousSnapshot = snapshotRef.current ?? snapshot;
       const nextSnapshot = await window.brainDesktop.captureDroppedPathsIntoBox(paths, boxId);
       setSnapshot(nextSnapshot);
+      reportCaptureFeedback(previousSnapshot, nextSnapshot, boxId, paths.length);
     } catch (cause) {
       setDropError(cause instanceof Error ? cause.message : "拖放失败");
     }
   }
 
   async function handleSelectBox(boxId: number) {
+    setAiOrganizationSuggestions([]);
     setSnapshot((current) =>
       current
         ? {
@@ -305,10 +481,35 @@ export function App() {
     setClipboardWatcherRunning(status.running);
   }
 
-  async function handleSetClipboardCaptureBox(boxId: number) {
-    setClipboardCaptureBoxId(boxId);
-    const status = await window.brainDesktop.setClipboardCaptureBox(boxId);
-    setClipboardCaptureBoxId(status.boxId);
+  async function handleCreateNotepadGroup(name: string) {
+    try {
+      const nextSnapshot = await window.brainDesktop.createNotepadGroup(name);
+      setNotepadSnapshot(nextSnapshot);
+      pushToast({ message: `已创建记事本分组 ${name}` });
+      return nextSnapshot;
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "创建记事本分组失败",
+        tone: "error",
+      });
+      throw cause;
+    }
+  }
+
+  async function handleCreateNotepadNote(groupId: number, content: string) {
+    try {
+      const nextSnapshot = await window.brainDesktop.createNotepadNote(groupId, content);
+      setNotepadSnapshot(nextSnapshot);
+      const groupName = nextSnapshot.groups.find((group) => group.id === groupId)?.name ?? "当前分组";
+      pushToast({ message: `已保存到记事本：${groupName}` });
+      return nextSnapshot;
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "保存记事本失败",
+        tone: "error",
+      });
+      throw cause;
+    }
   }
 
   async function handleCreateBox(name: string) {
@@ -466,6 +667,10 @@ export function App() {
     await handleDeleteItems([itemId]);
   }
 
+  async function handleBulkDeleteItems(itemIds: number[]) {
+    await handleDeleteItems(itemIds);
+  }
+
   async function handleOpenPath(path: string) {
     try {
       await window.brainDesktop.openPath(path);
@@ -492,7 +697,7 @@ export function App() {
   async function handleCopyText(text: string) {
     try {
       await window.brainDesktop.copyText(text);
-      pushToast({ message: "路径已复制" });
+      pushToast({ message: "已复制" });
     } catch (cause) {
       pushToast({
         message: cause instanceof Error ? cause.message : "复制失败",
@@ -586,6 +791,234 @@ export function App() {
     setBundleEntriesByItem((current) => ({ ...current, [itemId]: entries }));
   }
 
+  async function handleSuggestAiOrganization(boxId: number) {
+    try {
+      setAiOrganizing(true);
+      const result = await window.brainDesktop.suggestAiOrganization(boxId);
+      if (!result.ok) {
+        pushToast({ message: result.reason, tone: "error", duration: 4200 });
+        setAiOrganizationSuggestions([]);
+        return;
+      }
+
+      setAiOrganizationSuggestions(result.suggestions);
+      pushToast({
+        message:
+          result.suggestions.length > 0
+            ? `已生成 ${result.suggestions.length} 条 AI 整理建议`
+            : result.reason,
+        duration: 2600,
+      });
+    } catch (cause) {
+      pushToast({
+        message: getSafeErrorMessage(cause, "AI 整理失败"),
+        tone: "error",
+        duration: 4200,
+      });
+    } finally {
+      setAiOrganizing(false);
+    }
+  }
+
+  async function handleApplyAiOrganization(suggestions: AiOrganizationSuggestion[]) {
+    if (suggestions.length === 0) {
+      return;
+    }
+
+    try {
+      setAiApplying(true);
+      const nextSnapshot = await window.brainDesktop.applyAiOrganization(suggestions);
+      setSnapshot(nextSnapshot);
+      setAiOrganizationSuggestions([]);
+      pushToast({ message: `已应用 ${suggestions.length} 条 AI 整理建议` });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "应用 AI 整理失败",
+        tone: "error",
+        duration: 4200,
+      });
+    } finally {
+      setAiApplying(false);
+    }
+  }
+
+  async function handleSaveAiProviderConfig(input: AiProviderConfigInput) {
+    try {
+      const nextConfig = await window.brainDesktop.saveAiProviderConfig(input);
+      setAiProviderConfig(nextConfig);
+      pushToast({ message: input.clearApiKey ? "DeepSeek API Key 已清除" : "DeepSeek API 配置已保存" });
+    } catch (cause) {
+      pushToast({
+        message: getSafeErrorMessage(cause, "保存 AI 配置失败", [input.apiKey]),
+        tone: "error",
+        duration: 4200,
+      });
+    }
+  }
+
+  async function handleMoveItemToBox(itemId: number, boxId: number) {
+    try {
+      const nextSnapshot = await window.brainDesktop.moveItemToBox(itemId, boxId);
+      setSnapshot(nextSnapshot);
+      const boxName = nextSnapshot.boxes.find((box) => box.id === boxId)?.name ?? "目标盒子";
+      pushToast({ message: `已移到 ${boxName}` });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "移动失败",
+        tone: "error",
+      });
+      throw cause;
+    }
+  }
+
+  async function handleMoveItemsToBox(itemIds: number[], boxId: number) {
+    if (itemIds.length === 0) {
+      return;
+    }
+
+    try {
+      let nextSnapshot: WorkbenchSnapshot | null = snapshotRef.current ?? snapshot;
+
+      for (const itemId of itemIds) {
+        nextSnapshot = await window.brainDesktop.moveItemToBox(itemId, boxId);
+      }
+
+      if (nextSnapshot) {
+        setSnapshot(nextSnapshot);
+      }
+
+      const boxName = nextSnapshot?.boxes.find((box) => box.id === boxId)?.name ?? "目标盒子";
+      pushToast({ message: itemIds.length === 1 ? `已移到 ${boxName}` : `已将 ${itemIds.length} 张卡片移到 ${boxName}` });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "批量移动失败",
+        tone: "error",
+      });
+      throw cause;
+    }
+  }
+
+  async function handleTestAiProviderConnection(input: AiProviderConfigInput) {
+    try {
+      setAiTestingConnection(true);
+      const result: AiProviderConnectionTestResult = await window.brainDesktop.testAiProviderConnection(input);
+      pushToast({
+        message: result.reason,
+        tone: result.ok ? "info" : "error",
+        duration: result.ok ? 2600 : 4200,
+      });
+    } catch (cause) {
+      pushToast({
+        message: getSafeErrorMessage(cause, "测试 AI 连接失败", [input.apiKey]),
+        tone: "error",
+        duration: 4200,
+      });
+    } finally {
+      setAiTestingConnection(false);
+    }
+  }
+
+  async function handleStartAutoCapture(intervalMs: number) {
+    try {
+      const nextSnapshot = await window.brainDesktop.startAutoCapture(intervalMs);
+      setAutoCaptureSnapshot(nextSnapshot);
+    } catch (cause) {
+      pushToast({
+        message: getSafeErrorMessage(cause, "开启自动记录失败"),
+        tone: "error",
+        duration: 4200,
+      });
+    }
+  }
+
+  async function handleStopAutoCapture() {
+    const nextSnapshot = await window.brainDesktop.stopAutoCapture();
+    setAutoCaptureSnapshot(nextSnapshot);
+  }
+
+  async function handlePauseAutoCaptureForPrivacy() {
+    const nextSnapshot = await window.brainDesktop.pauseAutoCaptureForPrivacy();
+    setAutoCaptureSnapshot(nextSnapshot);
+  }
+
+  async function handleCaptureDesktopNow() {
+    const nextSnapshot = await window.brainDesktop.captureDesktopNow();
+    setAutoCaptureSnapshot(nextSnapshot);
+  }
+
+  async function handleSearchAutoCaptures() {
+    const nextSnapshot = await window.brainDesktop.getAutoCaptureSnapshot();
+    setAutoCaptureSnapshot(nextSnapshot);
+  }
+
+  async function handleSearchLocal(query: string) {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setLocalSearchResults(null);
+      return;
+    }
+
+    setLocalSearchLoading(true);
+    try {
+      const result = await window.brainDesktop.searchLocal(trimmed, LOCAL_SEARCH_RESULT_LIMIT);
+      setLocalSearchResults(result.results);
+    } catch {
+      setLocalSearchResults([]);
+    } finally {
+      setLocalSearchLoading(false);
+    }
+  }
+
+  async function handleDeleteAutoCaptureEntry(entryId: number) {
+    const nextSnapshot = await window.brainDesktop.deleteAutoCaptureEntry(entryId);
+    setAutoCaptureSnapshot(nextSnapshot);
+  }
+
+  async function handleClearAutoCaptures() {
+    const nextSnapshot = await window.brainDesktop.clearAutoCaptures();
+    setAutoCaptureSnapshot(nextSnapshot);
+    await handleRefreshStorageUsage();
+  }
+
+  async function handleRefreshStorageUsage() {
+    const usage = await window.brainDesktop.getStorageUsage();
+    setStorageUsage(usage);
+  }
+
+  async function handleCleanupExpiredAutoCaptures() {
+    setStorageMaintaining(true);
+    try {
+      const result = await window.brainDesktop.cleanupExpiredAutoCaptures();
+      setStorageUsage(result.usage);
+      const nextSnapshot = await window.brainDesktop.getAutoCaptureSnapshot();
+      setAutoCaptureSnapshot(nextSnapshot);
+      pushToast({ message: getStorageCleanupMessage(result) });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "清理过期自动记录失败",
+        tone: "error",
+      });
+    } finally {
+      setStorageMaintaining(false);
+    }
+  }
+
+  async function handleCleanupOrphanedStorageFiles() {
+    setStorageMaintaining(true);
+    try {
+      const result = await window.brainDesktop.cleanupOrphanedStorageFiles();
+      setStorageUsage(result.usage);
+      pushToast({ message: getStorageCleanupMessage(result) });
+    } catch (cause) {
+      pushToast({
+        message: cause instanceof Error ? cause.message : "清理无引用图片失败",
+        tone: "error",
+      });
+    } finally {
+      setStorageMaintaining(false);
+    }
+  }
+
   if (!snapshot) {
     return <div className="app-loading">正在加载 Brain Desktop...</div>;
   }
@@ -599,13 +1032,41 @@ export function App() {
     <>
       <AppShell
         snapshot={visibleSnapshot}
-        onQuickCapture={handleQuickCapture}
+        notepadSnapshot={notepadSnapshot ?? { groups: [], notes: [] }}
+        autoCaptureSnapshot={autoCaptureSnapshot ?? {
+          entries: [],
+          running: false,
+          paused: true,
+          pauseReason: "manual",
+          intervalMs: 60_000,
+          lastError: "",
+          ocrAvailable: false,
+          ocrStatus: "等待首次识别",
+        }}
+        onCaptureText={handleCaptureText}
+        onCreateNotepadGroup={handleCreateNotepadGroup}
+        onCreateNotepadNote={handleCreateNotepadNote}
+        onStartAutoCapture={handleStartAutoCapture}
+        onStopAutoCapture={handleStopAutoCapture}
+        onPauseAutoCaptureForPrivacy={handlePauseAutoCaptureForPrivacy}
+        onCaptureDesktopNow={handleCaptureDesktopNow}
+        onSearchAutoCaptures={handleSearchAutoCaptures}
+        onDeleteAutoCaptureEntry={handleDeleteAutoCaptureEntry}
+        onClearAutoCaptures={handleClearAutoCaptures}
+        storageUsage={storageUsage}
+        storageMaintaining={storageMaintaining}
+        onRefreshStorageUsage={handleRefreshStorageUsage}
+        onCleanupExpiredAutoCaptures={handleCleanupExpiredAutoCaptures}
+        onCleanupOrphanedStorageFiles={handleCleanupOrphanedStorageFiles}
+        localSearchResults={localSearchResults}
+        localSearchLoading={localSearchLoading}
+        onSearchLocal={handleSearchLocal}
         onSelectBox={handleSelectBox}
         onDropPaths={handleDroppedPaths}
-        onDropText={handleQuickCapture}
+        onDropText={handleCaptureText}
         onDropImage={handleDroppedImage}
         onDropToBox={handleDroppedPathsIntoBox}
-        onDropTextToBox={handleQuickCaptureIntoBox}
+        onDropTextToBox={handleCaptureTextIntoBox}
         onDropImageToBox={handleDroppedImageIntoBox}
         onPasteImage={handlePasteImage}
         onCreateBox={handleCreateBox}
@@ -613,6 +1074,7 @@ export function App() {
         onDeleteBox={handleDeleteBox}
         onClearBoxItems={handleClearBoxItems}
         onDeleteItem={handleDeleteItem}
+        onDeleteItems={handleBulkDeleteItems}
         onRenameItem={handleRenameItem}
         onRemoveBundleEntry={handleRemoveBundleEntry}
         onOpenPath={handleOpenPath}
@@ -620,14 +1082,24 @@ export function App() {
         onCopyText={handleCopyText}
         onExportBundleAi={handleExportBundleAi}
         onGroupItems={handleGroupItems}
+        onMoveItemToBox={handleMoveItemToBox}
+        onMoveItemsToBox={handleMoveItemsToBox}
         onMoveItemToIndex={handleMoveItemToIndex}
         onLoadBundleEntries={handleLoadBundleEntries}
+        aiOrganizationSuggestions={aiOrganizationSuggestions}
+        aiOrganizing={aiOrganizing}
+        aiApplying={aiApplying}
+        onSuggestAiOrganization={handleSuggestAiOrganization}
+        onApplyAiOrganization={handleApplyAiOrganization}
+        onClearAiOrganizationSuggestions={() => setAiOrganizationSuggestions([])}
+        aiProviderConfig={aiProviderConfig}
+        onSaveAiProviderConfig={handleSaveAiProviderConfig}
+        onTestAiProviderConnection={handleTestAiProviderConnection}
+        aiTestingConnection={aiTestingConnection}
         bundleEntriesByItem={bundleEntriesByItem}
         dropError={dropError}
         clipboardWatcherRunning={clipboardWatcherRunning}
-        clipboardCaptureBoxId={clipboardCaptureBoxId ?? visibleSnapshot.boxes[0]?.id ?? null}
         onToggleClipboardWatcher={handleToggleClipboardWatcher}
-        onSetClipboardCaptureBox={handleSetClipboardCaptureBox}
       />
       {toasts.length ? (
         <div className="toast-stack" aria-live="polite" aria-label="工作台通知">

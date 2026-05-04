@@ -1,4 +1,5 @@
-﻿import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MainCanvas } from "./main-canvas";
 
@@ -38,6 +39,10 @@ function mockImageSize(image: Element, width: number, height: number) {
   });
 }
 
+function openCardActionMenu(cardName: string) {
+  fireEvent.click(screen.getByRole("button", { name: `操作 ${cardName}` }));
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -70,7 +75,7 @@ describe("MainCanvas", () => {
     expect(container.querySelector(".card-stack")).toHaveAttribute("data-row-span");
   });
 
-  it("renders a compact topbar that groups the box header and filters", () => {
+  it("renders search and filters in a separate toolbar below the topbar", () => {
     const { container } = render(
       <MainCanvas
         box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
@@ -78,12 +83,35 @@ describe("MainCanvas", () => {
       />
     );
 
+    expect(container.querySelector(".canvas-control-panel")).not.toBeNull();
     expect(container.querySelector(".canvas-topbar")).not.toBeNull();
     expect(screen.queryByText("当前盒子")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "返回主界面" })).not.toBeInTheDocument();
-    expect(container.querySelector(".canvas-topbar .canvas-toolbar")).not.toBeNull();
-    expect(screen.getByLabelText("选择清空类型")).toBeInTheDocument();
+    expect(container.querySelector(".canvas-topbar .canvas-search-field")).toBeNull();
+    expect(container.querySelector(".canvas-control-panel > .canvas-topbar + .canvas-toolbar")).not.toBeNull();
+    expect(container.querySelector(".canvas-topbar + .canvas-toolbar .canvas-search-field")).not.toBeNull();
+    expect(screen.queryByLabelText("选择清空类型")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批量管理" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows the box overview return as a breadcrumb in the title area", () => {
+    const onBackToWorkspace = vi.fn();
+    const { container } = render(
+      <MainCanvas
+        box={{ id: 1, name: "Brand", color: "#2563eb", description: "", sortOrder: 0 }}
+        items={[]}
+        onBackToWorkspace={onBackToWorkspace}
+      />
+    );
+
+    expect(container.querySelector(".canvas-header-copy .canvas-breadcrumb")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "返回盒子总览" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回主界面" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回盒子总览" }));
+
+    expect(onBackToWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("clears the current box by the selected card kind after confirmation", async () => {
@@ -112,11 +140,248 @@ describe("MainCanvas", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "批量管理" }));
+
+    expect(screen.getByRole("region", { name: "批量管理" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("选择清空类型"), { target: { value: "link" } });
-    fireEvent.click(screen.getByRole("button", { name: "清空盒子" }));
+    fireEvent.click(screen.getByRole("button", { name: "清空所选类型" }));
 
     await waitFor(() => expect(onClearBoxItems).toHaveBeenCalledWith(1, "link"));
     expect(window.confirm).toHaveBeenCalledWith("确定清空「Inbox」里的链接卡片吗？");
+  });
+
+  it("starts selection mode from batch management and tracks selected cards", () => {
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 31,
+            boxId: 1,
+            kind: "text",
+            title: "Alpha note",
+            content: "Alpha note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 32,
+            boxId: 1,
+            kind: "link",
+            title: "https://example.com",
+            content: "https://example.com",
+            sourceUrl: "https://example.com",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 1,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "批量管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择卡片" }));
+
+    expect(screen.getByText("已选择 0 张")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择卡片 Alpha note")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("选择卡片 Alpha note"));
+
+    expect(screen.getByText("已选择 1 张")).toBeInTheDocument();
+    expect(screen.getByLabelText("卡片 Alpha note")).toHaveAttribute("data-selected", "true");
+    expect(screen.getByLabelText("卡片 Alpha note")).toHaveAttribute("draggable", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+
+    expect(screen.queryByLabelText("选择卡片 Alpha note")).not.toBeInTheDocument();
+    expect(screen.queryByText("已选择 1 张")).not.toBeInTheDocument();
+  });
+
+  it("selects, inverts, and clears the current filtered card selection", () => {
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 31,
+            boxId: 1,
+            kind: "text",
+            title: "Alpha note",
+            content: "Alpha note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 32,
+            boxId: 1,
+            kind: "link",
+            title: "https://example.com",
+            content: "https://example.com",
+            sourceUrl: "https://example.com",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 1,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 33,
+            boxId: 1,
+            kind: "text",
+            title: "Gamma note",
+            content: "Gamma note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 2,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "文本" }));
+    fireEvent.click(screen.getByRole("button", { name: "批量管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择卡片" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "全选当前筛选结果" }));
+
+    expect(screen.getByText("已选择 2 张")).toBeInTheDocument();
+    expect(screen.getByLabelText("卡片 Alpha note")).toHaveAttribute("data-selected", "true");
+    expect(screen.getByLabelText("卡片 Gamma note")).toHaveAttribute("data-selected", "true");
+    expect(screen.queryByLabelText("选择卡片 https://example.com")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("选择卡片 Alpha note"));
+    fireEvent.click(screen.getByRole("button", { name: "反选当前筛选结果" }));
+
+    expect(screen.getByText("已选择 1 张")).toBeInTheDocument();
+    expect(screen.getByLabelText("卡片 Alpha note")).toHaveAttribute("data-selected", "true");
+    expect(screen.getByLabelText("卡片 Gamma note")).toHaveAttribute("data-selected", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "清空选择" }));
+
+    expect(screen.getByText("已选择 0 张")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择卡片 Alpha note")).toBeInTheDocument();
+  });
+
+  it("moves selected cards to another box from batch management", async () => {
+    const onMoveItemToBox = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        boxes={[
+          { id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 },
+          { id: 2, name: "Ideas", color: "#2563eb", description: "", sortOrder: 1 },
+        ]}
+        items={[
+          {
+            id: 31,
+            boxId: 1,
+            kind: "text",
+            title: "Alpha note",
+            content: "Alpha note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 32,
+            boxId: 1,
+            kind: "link",
+            title: "https://example.com",
+            content: "https://example.com",
+            sourceUrl: "https://example.com",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 1,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+        onMoveItemToBox={onMoveItemToBox}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "批量管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择卡片" }));
+    fireEvent.click(screen.getByLabelText("选择卡片 Alpha note"));
+    fireEvent.click(screen.getByLabelText("选择卡片 https://example.com"));
+
+    expect(screen.getByText("已选择 2 张")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Inbox" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("选择移动目标盒子"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "移动所选卡片" }));
+
+    await waitFor(() => expect(onMoveItemToBox).toHaveBeenNthCalledWith(1, 31, 2));
+    expect(onMoveItemToBox).toHaveBeenNthCalledWith(2, 32, 2);
+    await waitFor(() => expect(screen.queryByText("已选择 2 张")).not.toBeInTheDocument());
+  });
+
+  it("deletes selected cards from batch management after confirmation", async () => {
+    const onDeleteItem = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 31,
+            boxId: 1,
+            kind: "text",
+            title: "Alpha note",
+            content: "Alpha note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 32,
+            boxId: 1,
+            kind: "link",
+            title: "https://example.com",
+            content: "https://example.com",
+            sourceUrl: "https://example.com",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 1,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+        onDeleteItem={onDeleteItem}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "批量管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择卡片" }));
+    fireEvent.click(screen.getByLabelText("选择卡片 Alpha note"));
+    fireEvent.click(screen.getByLabelText("选择卡片 https://example.com"));
+    fireEvent.click(screen.getByRole("button", { name: "删除所选卡片" }));
+
+    expect(window.confirm).toHaveBeenCalledWith("确定删除选中的 2 张卡片吗？");
+    await waitFor(() => expect(onDeleteItem).toHaveBeenNthCalledWith(1, 31));
+    expect(onDeleteItem).toHaveBeenNthCalledWith(2, 32);
+    await waitFor(() => expect(screen.queryByText("已选择 2 张")).not.toBeInTheDocument());
   });
 
   it("filters card kinds through inline filter pills", () => {
@@ -203,6 +468,60 @@ describe("MainCanvas", () => {
     expect(screen.getByText("1 / 2 张卡片")).toBeInTheDocument();
   });
 
+  it("shows AI organization suggestions and applies them", async () => {
+    const onSuggestAiOrganization = vi.fn().mockResolvedValue(undefined);
+    const onApplyAiOrganization = vi.fn().mockResolvedValue(undefined);
+    const onClearAiOrganizationSuggestions = vi.fn();
+    const suggestions = [
+      {
+        itemId: 11,
+        suggestedTitle: "模型路由策略",
+        targetBoxId: 2,
+        targetBoxName: "AI",
+        createBox: false,
+        confidence: 0.9,
+        reason: "内容提到模型和提示词",
+      },
+    ];
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 11,
+            boxId: 1,
+            kind: "text",
+            title: "rough note",
+            content: "整理一下模型路由",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+        aiOrganizationSuggestions={suggestions}
+        onSuggestAiOrganization={onSuggestAiOrganization}
+        onApplyAiOrganization={onApplyAiOrganization}
+        onClearAiOrganizationSuggestions={onClearAiOrganizationSuggestions}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "AI整理" }));
+    expect(onSuggestAiOrganization).toHaveBeenCalledWith(1);
+    expect(screen.getByRole("region", { name: "AI 整理建议" })).toBeInTheDocument();
+    expect(screen.getByText("AI")).toBeInTheDocument();
+    expect(screen.getByText("标题：模型路由策略")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "应用建议" }));
+    await waitFor(() => expect(onApplyAiOrganization).toHaveBeenCalledWith(suggestions));
+
+    fireEvent.click(screen.getByRole("button", { name: "忽略" }));
+    expect(onClearAiOrganizationSuggestions).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the empty state outside the masonry grid", () => {
     const { container } = render(
       <MainCanvas
@@ -215,7 +534,7 @@ describe("MainCanvas", () => {
     expect(container.querySelector(".card-grid")).toBeNull();
   });
 
-  it("renames the current box and a non-text card by clicking their titles", async () => {
+  it("renames the current box and a non-text card from the action menu", async () => {
     const onRenameBox = vi.fn().mockResolvedValue(undefined);
     const onRenameItem = vi.fn().mockResolvedValue(undefined);
 
@@ -252,7 +571,8 @@ describe("MainCanvas", () => {
       fireEvent.submit(renameBoxForm);
     }
 
-    fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+    openCardActionMenu("Alpha");
+    fireEvent.click(screen.getByRole("menuitem", { name: "重命名" }));
     const renameItemInput = screen.getByDisplayValue("Alpha");
     fireEvent.change(renameItemInput, {
       target: { value: "Renamed Alpha" },
@@ -292,7 +612,7 @@ describe("MainCanvas", () => {
     );
 
     expect(screen.getAllByText(repeated)).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: new RegExp(repeated) })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: repeated })).not.toBeInTheDocument();
   });
 
   it("renders text cards as one selectable text block", () => {
@@ -318,8 +638,75 @@ describe("MainCanvas", () => {
     );
 
     expect(screen.getByText("Plain note")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Plain note/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Plain note" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "操作 Plain note" })).toBeInTheDocument();
     expect(screen.getByLabelText("卡片 Plain note")).toHaveAttribute("draggable", "true");
+  });
+
+  it("copies text card content from the card action", async () => {
+    const onCopyText = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        onCopyText={onCopyText}
+        items={[
+          {
+            id: 15,
+            boxId: 1,
+            kind: "text",
+            title: "Plain note",
+            content: "Plain note body",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    openCardActionMenu("Plain note");
+    fireEvent.click(screen.getByRole("menuitem", { name: "复制文本内容" }));
+
+    await waitFor(() => expect(onCopyText).toHaveBeenCalledWith("Plain note body"));
+  });
+
+  it("opens full text preview from the text card action", () => {
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 17,
+            boxId: 1,
+            kind: "text",
+            title: "Long note",
+            content: "Long note body with enough detail that it should be readable in a focused preview.",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    openCardActionMenu("Long note");
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看全文" }));
+
+    expect(screen.getByRole("dialog", { name: "预览 Long note" })).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Long note body with enough detail that it should be readable in a focused preview.")
+    ).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭预览" }));
+
+    expect(screen.queryByRole("dialog", { name: "预览 Long note" })).not.toBeInTheDocument();
   });
 
   it("renders clickable links for link cards", () => {
@@ -344,6 +731,8 @@ describe("MainCanvas", () => {
       />
     );
 
+    expect(screen.getByText("来源")).toBeInTheDocument();
+    expect(screen.getByText("github.com")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "打开 https://github.com/NousResearch/hermes-agent" })).toHaveAttribute(
       "href",
       "https://github.com/NousResearch/hermes-agent"
@@ -355,7 +744,77 @@ describe("MainCanvas", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("forwards image preview requests when an image card is clicked", () => {
+  it("copies link card urls from the card action", async () => {
+    const onCopyText = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        onCopyText={onCopyText}
+        items={[
+          {
+            id: 16,
+            boxId: 1,
+            kind: "link",
+            title: "Hermes Agent",
+            content: "https://github.com/NousResearch/hermes-agent",
+            sourceUrl: "https://github.com/NousResearch/hermes-agent",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    openCardActionMenu("Hermes Agent");
+    fireEvent.click(screen.getByRole("menuitem", { name: "复制链接" }));
+
+    await waitFor(() => expect(onCopyText).toHaveBeenCalledWith("https://github.com/NousResearch/hermes-agent"));
+  });
+
+  it("opens link detail preview from the link card action", () => {
+    const onOpenExternal = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        onOpenExternal={onOpenExternal}
+        items={[
+          {
+            id: 26,
+            boxId: 1,
+            kind: "link",
+            title: "Hermes Agent",
+            content: "https://github.com/NousResearch/hermes-agent",
+            sourceUrl: "https://github.com/NousResearch/hermes-agent",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    openCardActionMenu("Hermes Agent");
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看链接详情" }));
+
+    const dialog = screen.getByRole("dialog", { name: "预览 Hermes Agent" });
+    const previewLink = within(dialog).getByRole("link", {
+      name: "打开 https://github.com/NousResearch/hermes-agent",
+    });
+    expect(previewLink).toHaveAttribute("href", "https://github.com/NousResearch/hermes-agent");
+
+    fireEvent.click(previewLink);
+
+    expect(onOpenExternal).toHaveBeenCalledWith("https://github.com/NousResearch/hermes-agent");
+  });
+
+  it("forwards image preview requests from the image card action", () => {
     const onPreviewImage = vi.fn();
 
     render(
@@ -380,7 +839,8 @@ describe("MainCanvas", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "放大查看 截图" }));
+    openCardActionMenu("截图");
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看图片" }));
 
     expect(onPreviewImage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -448,6 +908,8 @@ describe("MainCanvas", () => {
     expect(stacks[1]).toHaveClass("card-stack-reading", "card-stack-priority-main");
     expect(stacks[2]).toHaveClass("card-stack-visual", "card-stack-priority-visual");
     expect(screen.getByText("DOCX")).toBeInTheDocument();
+    expect(screen.getByText("来源")).toBeInTheDocument();
+    expect(screen.getByLabelText("来源 C:\\Users\\Administrator\\Desktop\\openclaw搴旂敤\\brief.docx")).toBeInTheDocument();
     expect(screen.getByText("Desktop / openclaw搴旂敤 / brief.docx")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开 C:\\Users\\Administrator\\Desktop\\openclaw搴旂敤\\brief.docx" })).toHaveAttribute(
       "title",
@@ -484,6 +946,232 @@ describe("MainCanvas", () => {
 
     expect(onOpenPath).toHaveBeenCalledWith("C:\\docs\\notes.pdf");
     expect(screen.queryByText("澶嶅埗璺緞")).not.toBeInTheDocument();
+  });
+
+  it("copies file card paths from the card action", async () => {
+    const onCopyText = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 19,
+            boxId: 1,
+            kind: "file",
+            title: "notes.pdf",
+            content: "C:\\docs\\notes.pdf",
+            sourceUrl: "",
+            sourcePath: "C:\\docs\\notes.pdf",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+        onCopyText={onCopyText}
+      />
+    );
+
+    openCardActionMenu("notes.pdf");
+    fireEvent.click(screen.getByRole("menuitem", { name: "复制路径" }));
+
+    await waitFor(() => expect(onCopyText).toHaveBeenCalledWith("C:\\docs\\notes.pdf"));
+  });
+
+  it("opens file detail preview from the file card action", () => {
+    const onOpenPath = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 27,
+            boxId: 1,
+            kind: "file",
+            title: "notes.pdf",
+            content: "C:\\docs\\notes.pdf",
+            sourceUrl: "",
+            sourcePath: "C:\\docs\\notes.pdf",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+        onOpenPath={onOpenPath}
+      />
+    );
+
+    openCardActionMenu("notes.pdf");
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看文件详情" }));
+
+    const dialog = screen.getByRole("dialog", { name: "预览 notes.pdf" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "打开 C:\\docs\\notes.pdf" }));
+
+    expect(onOpenPath).toHaveBeenCalledWith("C:\\docs\\notes.pdf");
+  });
+
+  it("collects common card actions into a single menu", () => {
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 23,
+            boxId: 1,
+            kind: "text",
+            title: "Text note",
+            content: "Text note body",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 24,
+            boxId: 1,
+            kind: "link",
+            title: "https://developers.openai.com/codex/pricing",
+            content: "https://developers.openai.com/codex/pricing",
+            sourceUrl: "https://developers.openai.com/codex/pricing",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 1,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 25,
+            boxId: 1,
+            kind: "file",
+            title: "notes.pdf",
+            content: "C:\\docs\\notes.pdf",
+            sourceUrl: "",
+            sourcePath: "C:\\docs\\notes.pdf",
+            bundleCount: 0,
+            sortOrder: 2,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "操作 Text note" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "操作 https://developers.openai.com/codex/pricing" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "操作 notes.pdf" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "编辑 https://developers.openai.com/codex/pricing 的标题" })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "编辑 notes.pdf 的标题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制文本内容" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制链接" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制路径" })).not.toBeInTheDocument();
+
+    openCardActionMenu("https://developers.openai.com/codex/pricing");
+
+    expect(screen.getByRole("menu", { name: "https://developers.openai.com/codex/pricing 操作" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "复制链接" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "查看链接详情" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "重命名" })).toBeInTheDocument();
+  });
+
+  it("closes an open card action menu when clicking outside it", () => {
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 28,
+            boxId: 1,
+            kind: "text",
+            title: "Outside note",
+            content: "Outside note body",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    openCardActionMenu("Outside note");
+
+    expect(screen.getByRole("menu", { name: "Outside note 操作" })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByRole("menu", { name: "Outside note 操作" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "操作 Outside note" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("positions card action menus in the viewport instead of inside the card", () => {
+    const originalInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
+
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 29,
+            boxId: 1,
+            kind: "link",
+            title: "Edge link",
+            content: "https://example.com/edge",
+            sourceUrl: "https://example.com/edge",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    const actionButton = screen.getByRole("button", { name: "操作 Edge link" });
+    vi.spyOn(actionButton, "getBoundingClientRect").mockReturnValue({
+      x: 1080,
+      y: 220,
+      width: 72,
+      height: 28,
+      top: 220,
+      right: 1152,
+      bottom: 248,
+      left: 1080,
+      toJSON: () => undefined,
+    });
+
+    fireEvent.click(actionButton);
+
+    const menu = screen.getByRole("menu", { name: "Edge link 操作" });
+    expect(menu).toHaveStyle({ position: "fixed", top: "254px", right: "48px" });
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalInnerWidth });
+  });
+
+  it("allows long card titles and links to wrap inside card bounds", () => {
+    const css = readFileSync("src/index.css", "utf8");
+
+    expect(css).toMatch(/\.card-title-button\s*{[^}]*overflow-wrap:\s*anywhere/s);
+    expect(css).toMatch(/\.card-title-static\s*{[^}]*overflow-wrap:\s*anywhere/s);
+    expect(css).toMatch(/\.card-link\s*{[^}]*overflow-wrap:\s*anywhere/s);
+  });
+
+  it("keeps item previews fixed in the current viewport", () => {
+    const css = readFileSync("src/index.css", "utf8");
+
+    expect(css).toMatch(/\.bundle-item-preview-layer\s*{[^}]*position:\s*fixed/s);
+    expect(css).toMatch(/\.bundle-item-preview-layer\s*{[^}]*place-items:\s*center/s);
+    expect(css).toMatch(/\.bundle-item-preview-panel\s*{[^}]*align-self:\s*center/s);
   });
 
   it("groups one card onto another card through direct card drop", async () => {
@@ -529,6 +1217,64 @@ describe("MainCanvas", () => {
     fireEvent(screen.getByLabelText("卡片 Cover note"), createDragEvent("drop", dataTransfer));
 
     await waitFor(() => expect(onGroupItems).toHaveBeenCalledWith(22, 21));
+  });
+
+  it("shows drag guidance for sorting and grouping cards", () => {
+    render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 121,
+            boxId: 1,
+            kind: "text",
+            title: "Target note",
+            content: "Target note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+          {
+            id: 122,
+            boxId: 1,
+            kind: "text",
+            title: "Source note",
+            content: "Source note",
+            sourceUrl: "",
+            sourcePath: "",
+            bundleCount: 0,
+            sortOrder: 1,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+      />
+    );
+
+    const dataTransfer = createDataTransfer();
+    fireEvent(screen.getByLabelText("卡片 Source note"), createDragEvent("dragstart", dataTransfer));
+
+    const status = screen.getByRole("status", { name: "拖拽操作提示" });
+    expect(status).toHaveTextContent("拖到空白位置排序，拖到卡片上组合，拖到左侧盒子移动，拖到垃圾箱删除");
+
+    fireEvent(screen.getByLabelText("放到位置 1"), createDragEvent("dragover", dataTransfer));
+
+    expect(status).toHaveTextContent("松开后移动到位置 1");
+    expect(screen.getByLabelText("放到位置 1")).toHaveAttribute("data-drop-visual", "sort");
+    expect(screen.getByLabelText("放到位置 1")).not.toHaveClass("active");
+
+    fireEvent(screen.getByLabelText("卡片 Target note"), createDragEvent("dragover", dataTransfer));
+
+    expect(status).toHaveTextContent("松开后与 Target note 组合");
+    expect(screen.getByLabelText("卡片 Target note")).toHaveAttribute("data-drop-visual", "group");
+    expect(screen.getByLabelText("卡片 Target note")).not.toHaveAttribute("data-group-target");
+
+    fireEvent(screen.getByLabelText("卡片 Source note"), createDragEvent("dragend", dataTransfer));
+
+    expect(screen.queryByRole("status", { name: "拖拽操作提示" })).not.toBeInTheDocument();
   });
 
   it("opens a bundle extraction dialog instead of expanding inline content", async () => {
@@ -589,7 +1335,10 @@ describe("MainCanvas", () => {
     expect(screen.getAllByText("PDF").length).toBeGreaterThan(0);
     expect(document.querySelector(".bundle-preview-grid")).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "提取 Cover note 的内容" }));
+    expect(screen.queryByRole("button", { name: "提取 Cover note 的内容" })).not.toBeInTheDocument();
+
+    openCardActionMenu("Cover note");
+    fireEvent.click(screen.getByRole("menuitem", { name: "内容提取" }));
 
     const dialog = await screen.findByRole("dialog", { name: "内容提取 Cover note" });
     expect(dialog).toBeInTheDocument();
@@ -657,7 +1406,8 @@ describe("MainCanvas", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "提取 组合 #81 的内容" }));
+    openCardActionMenu("组合 #81");
+    fireEvent.click(screen.getByRole("menuitem", { name: "内容提取" }));
     const exportButton = await screen.findByRole("button", { name: "导出给AI" });
     await waitFor(() => expect(exportButton).not.toBeDisabled());
     fireEvent.click(exportButton);
@@ -896,7 +1646,8 @@ describe("MainCanvas", () => {
 
     expect(screen.queryByRole("button", { name: "编辑 First note line 的标题" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "提取 组合 #61 的内容" }));
+    openCardActionMenu("组合 #61");
+    fireEvent.click(screen.getByRole("menuitem", { name: "内容提取" }));
 
     expect(await screen.findByRole("dialog", { name: "内容提取 组合 #61" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText(/Second line/).length).toBeGreaterThan(0));
@@ -1488,6 +2239,43 @@ describe("MainCanvas", () => {
       expect(container.querySelector(".work-card.kind-image")).toHaveClass("work-card-compact");
       expect(container.querySelector(".card-stack")).toHaveClass("card-stack-compact");
     });
+  });
+
+  it("uses image thumbnails on cards while preview actions keep the original image", () => {
+    const onPreviewImage = vi.fn();
+    const { container } = render(
+      <MainCanvas
+        box={{ id: 1, name: "Inbox", color: "#f97316", description: "", sortOrder: 0 }}
+        items={[
+          {
+            id: 102,
+            boxId: 1,
+            kind: "image",
+            title: "thumbed-shot.png",
+            content: "file:///C:/brain/image-captures/original.png",
+            thumbnailUrl: "data:image/jpeg;base64,dGh1bWI=",
+            sourceUrl: "",
+            sourcePath: "C:\\brain\\image-captures\\original.png",
+            bundleCount: 0,
+            sortOrder: 0,
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T00:00:00.000Z",
+          },
+        ]}
+        onPreviewImage={onPreviewImage}
+      />
+    );
+
+    const imagePreview = container.querySelector(".work-card.kind-image .card-image-preview");
+    expect(imagePreview).toHaveAttribute("src", "data:image/jpeg;base64,dGh1bWI=");
+
+    fireEvent.click(screen.getByRole("button", { name: "放大查看 thumbed-shot.png" }));
+
+    expect(onPreviewImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "file:///C:/brain/image-captures/original.png",
+      })
+    );
   });
 });
 

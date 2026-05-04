@@ -1,6 +1,16 @@
-import { clipboard } from "electron";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { app, clipboard } from "electron";
 import type { WorkbenchSnapshot } from "../shared/types";
-import { buildFingerprint, isDuplicateRecent, rememberFingerprint, shouldIgnoreText } from "./dedupe";
+import {
+  buildFingerprint,
+  hydrateRecentFingerprints,
+  isDuplicateRecent,
+  rememberFingerprint,
+  serializeRecentFingerprints,
+  shouldIgnoreText,
+  type RecentFingerprintEntry,
+} from "./dedupe";
 import type { DesktopStore } from "./store";
 
 export type ClipboardCaptureContent =
@@ -15,9 +25,18 @@ export type ClipboardCaptureResult = {
   snapshot?: WorkbenchSnapshot;
 };
 
+type ClipboardCaptureResultListener = (result: ClipboardCaptureResult) => void;
+
 let watcherTimer: ReturnType<typeof setInterval> | null = null;
 let captureTargetBoxId: number | null = null;
 let watcherLastFingerprint = "";
+let persistentDedupeLoaded = false;
+const captureResultListeners = new Set<ClipboardCaptureResultListener>();
+const DEDUPE_STATE_FILE_NAME = "brain-recent-captures.json";
+
+type StoredDedupeState = {
+  fingerprints?: unknown;
+};
 
 export function setClipboardCaptureBoxId(boxId: number | null) {
   captureTargetBoxId = boxId;
@@ -25,6 +44,17 @@ export function setClipboardCaptureBoxId(boxId: number | null) {
 
 export function getClipboardCaptureBoxId() {
   return captureTargetBoxId;
+}
+
+export function subscribeClipboardCaptureResults(listener: ClipboardCaptureResultListener) {
+  captureResultListeners.add(listener);
+  return () => {
+    captureResultListeners.delete(listener);
+  };
+}
+
+function emitClipboardCaptureResult(result: ClipboardCaptureResult) {
+  captureResultListeners.forEach((listener) => listener(result));
 }
 
 export function readClipboardTextOrImage(): ClipboardCaptureContent {
@@ -59,12 +89,82 @@ function getContentFingerprint(content: ClipboardCaptureContent) {
   return buildFingerprint(content.kind, content.value);
 }
 
+function getRecentStagingBoxId(store: DesktopStore) {
+  return captureTargetBoxId ?? store.getWorkbenchSnapshot().boxes[0]?.id ?? null;
+}
+
+function getDedupeStatePath() {
+  try {
+    const userDataPath = app?.getPath?.("userData");
+    return userDataPath ? join(userDataPath, DEDUPE_STATE_FILE_NAME) : "";
+  } catch {
+    return "";
+  }
+}
+
+function readPersistentDedupeState() {
+  if (persistentDedupeLoaded) {
+    return;
+  }
+
+  persistentDedupeLoaded = true;
+  const statePath = getDedupeStatePath();
+  if (!statePath || !existsSync(statePath)) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(statePath, "utf8")) as StoredDedupeState;
+    const entries = Array.isArray(parsed.fingerprints)
+      ? parsed.fingerprints.filter((entry): entry is RecentFingerprintEntry => {
+          return (
+            entry != null &&
+            typeof entry === "object" &&
+            typeof (entry as RecentFingerprintEntry).fingerprint === "string" &&
+            typeof (entry as RecentFingerprintEntry).lastSeenAt === "number"
+          );
+        })
+      : [];
+    hydrateRecentFingerprints(entries);
+  } catch {
+    // Ignore corrupt short-lived dedupe state; the next successful capture rewrites it.
+  }
+}
+
+function writePersistentDedupeState() {
+  const statePath = getDedupeStatePath();
+  if (!statePath) {
+    return;
+  }
+
+  try {
+    mkdirSync(dirname(statePath), { recursive: true });
+    writeFileSync(
+      statePath,
+      JSON.stringify(
+        {
+          fingerprints: serializeRecentFingerprints(),
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+  } catch {
+    // Deduplication still works in memory when the state file cannot be written.
+  }
+}
+
 export function captureClipboardNow(store: DesktopStore): ClipboardCaptureResult {
   const content = readClipboardTextOrImage();
-  return captureClipboardContent(store, content);
+  const result = captureClipboardContent(store, content);
+  emitClipboardCaptureResult(result);
+  return result;
 }
 
 function captureClipboardContent(store: DesktopStore, content: ClipboardCaptureContent): ClipboardCaptureResult {
+  readPersistentDedupeState();
+
   if (content.kind === "empty") {
     return { captured: false, kind: "empty", reason: content.reason };
   }
@@ -79,16 +179,18 @@ function captureClipboardContent(store: DesktopStore, content: ClipboardCaptureC
   }
 
   try {
+    const targetBoxId = getRecentStagingBoxId(store);
     const snapshot =
       content.kind === "image"
-        ? captureTargetBoxId == null
+        ? targetBoxId == null
           ? store.captureImageData(content.value, content.title)
-          : store.captureImageDataIntoBox(content.value, content.title, captureTargetBoxId)
-        : captureTargetBoxId == null
+          : store.captureImageDataIntoBox(content.value, content.title, targetBoxId)
+        : targetBoxId == null
           ? store.captureTextOrLink(content.value)
-          : store.captureTextOrLinkIntoBox(content.value, captureTargetBoxId);
+          : store.captureTextOrLinkIntoBox(content.value, targetBoxId);
 
     rememberFingerprint(fingerprint);
+    writePersistentDedupeState();
     return { captured: true, kind: content.kind, reason: "已收集剪贴板", snapshot };
   } catch (cause) {
     return {
@@ -111,7 +213,6 @@ export function startClipboardWatcher(store: DesktopStore) {
     const content = readClipboardTextOrImage();
     const fingerprint = getContentFingerprint(content);
     if (!fingerprint) {
-      watcherLastFingerprint = "";
       return;
     }
 
@@ -121,6 +222,7 @@ export function startClipboardWatcher(store: DesktopStore) {
 
     watcherLastFingerprint = fingerprint;
     const result = captureClipboardContent(store, content);
+    emitClipboardCaptureResult(result);
     if (!result.captured && result.reason && !result.reason.includes("重复") && result.reason !== "剪贴板为空") {
       console.info(`[clipboard-capture] ${result.reason}`);
     }

@@ -22,8 +22,15 @@ import {
 
 function createStoreDouble() {
   return {
+    getWorkbenchSnapshot: vi.fn().mockReturnValue({
+      boxes: [{ id: 1, name: "收件箱", color: "#f97316", description: "", sortOrder: 0 }],
+      items: [],
+      panelState: { selectedBoxId: 1 },
+    }),
     captureTextOrLink: vi.fn().mockReturnValue({ items: [] }),
+    captureTextOrLinkIntoBox: vi.fn().mockReturnValue({ items: [] }),
     captureImageData: vi.fn().mockReturnValue({ items: [] }),
+    captureImageDataIntoBox: vi.fn().mockReturnValue({ items: [] }),
   } as unknown as DesktopStore;
 }
 
@@ -49,7 +56,7 @@ describe("clipboard capture", () => {
     const result = captureClipboardNow(store);
 
     expect(result.captured).toBe(true);
-    expect(store.captureTextOrLink).toHaveBeenCalledWith("Useful clipped note");
+    expect(store.captureTextOrLinkIntoBox).toHaveBeenCalledWith("Useful clipped note", 1);
   });
 
   it("captures clipboard images through the store", () => {
@@ -63,7 +70,7 @@ describe("clipboard capture", () => {
     const result = captureClipboardNow(store);
 
     expect(result.captured).toBe(true);
-    expect(store.captureImageData).toHaveBeenCalledWith("data:image/png;base64,ZmFrZQ==", "剪贴板图片");
+    expect(store.captureImageDataIntoBox).toHaveBeenCalledWith("data:image/png;base64,ZmFrZQ==", "剪贴板图片", 1);
   });
 
   it("does not capture recent duplicate fingerprints", () => {
@@ -76,7 +83,7 @@ describe("clipboard capture", () => {
 
     expect(result.captured).toBe(false);
     expect(result.reason).toContain("重复");
-    expect(store.captureTextOrLink).toHaveBeenCalledTimes(1);
+    expect(store.captureTextOrLinkIntoBox).toHaveBeenCalledTimes(1);
   });
 
   it("watcher captures a clipboard fingerprint only after it changes", () => {
@@ -92,11 +99,33 @@ describe("clipboard capture", () => {
     vi.advanceTimersByTime(1500);
     vi.advanceTimersByTime(30_000);
 
-    expect(store.captureTextOrLink).toHaveBeenCalledTimes(1);
+    expect(store.captureTextOrLinkIntoBox).toHaveBeenCalledTimes(1);
 
     clipboardText = "Another watcher note";
     vi.advanceTimersByTime(1500);
 
-    expect(store.captureTextOrLink).toHaveBeenCalledTimes(2);
+    expect(store.captureTextOrLinkIntoBox).toHaveBeenCalledTimes(2);
+  });
+
+  it("watcher does not recapture the same fingerprint after a transient empty clipboard read", () => {
+    vi.useFakeTimers();
+    const store = createStoreDouble();
+    let clipboardText = "";
+    electronMocks.readText.mockImplementation(() => clipboardText);
+    electronMocks.readImage.mockReturnValue({ isEmpty: () => true, toDataURL: () => "" });
+
+    startClipboardWatcher(store);
+
+    clipboardText = "Stable watcher note";
+    vi.advanceTimersByTime(1500);
+
+    clipboardText = "";
+    vi.advanceTimersByTime(1500);
+
+    vi.advanceTimersByTime(10_001);
+    clipboardText = "Stable watcher note";
+    vi.advanceTimersByTime(1500);
+
+    expect(store.captureTextOrLinkIntoBox).toHaveBeenCalledTimes(1);
   });
 });

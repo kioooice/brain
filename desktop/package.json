@@ -8,13 +8,15 @@
   "scripts": {
     "prestart": "node ./scripts/prepare-start.js",
     "prepackage": "node ./scripts/prepare-start.js",
-    "premake": "node ./scripts/prepare-start.js",
     "start": "electron-forge start",
     "package": "electron-forge package",
-    "make": "electron-forge make",
+    "make": "node ./scripts/make-windows-nsis.js",
+    "make:forge": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "test": "vitest"
+    "test": "vitest --exclude src/main/make-windows-nsis.test.ts",
+    "test:all": "vitest",
+    "test:packaging": "vitest src/main/make-windows-nsis.test.ts"
   },
   "keywords": [],
   "author": {
@@ -26,7 +28,6 @@
     "@electron-forge/cli": "^7.11.1",
     "@electron-forge/maker-deb": "^7.11.1",
     "@electron-forge/maker-rpm": "^7.11.1",
-    "@electron-forge/maker-squirrel": "^7.11.1",
     "@electron-forge/maker-zip": "^7.11.1",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
     "@electron-forge/plugin-fuses": "^7.11.1",
@@ -41,6 +42,7 @@
     "@vercel/webpack-asset-relocator-loader": "^1.7.3",
     "css-loader": "^6.11.0",
     "electron": "41.2.0",
+    "electron-builder": "^26.0.12",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
     "fork-ts-checker-webpack-plugin": "^7.3.0",
@@ -54,7 +56,6 @@
   "dependencies": {
     "better-sqlite3": "^12.4.6",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "electron-squirrel-startup": "^1.0.1"
+    "react-dom": "^19.2.0"
   }
 }

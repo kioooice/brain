@@ -5,6 +5,9 @@ const ipcMainMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("electron", () => ({
+  app: {
+    getPath: vi.fn(() => "C:\\mock-user-data"),
+  },
   ipcMain: ipcMainMocks,
   shell: {
     openPath: vi.fn(),
@@ -16,6 +19,12 @@ vi.mock("electron", () => ({
   clipboard: {
     writeText: vi.fn(),
   },
+  desktopCapturer: {
+    getSources: vi.fn(),
+  },
+  screen: {
+    getPrimaryDisplay: vi.fn(),
+  },
 }));
 
 import { IPC_CHANNELS } from "../shared/ipc";
@@ -24,7 +33,19 @@ import { registerIpc } from "./ipc";
 function createStoreDouble() {
   return {
     getWorkbenchSnapshot: vi.fn(),
-    setAlwaysOnTop: vi.fn(),
+    getNotepadSnapshot: vi.fn(),
+    createNotepadGroup: vi.fn(),
+    createNotepadNote: vi.fn(),
+    getAutoCaptureSnapshot: vi.fn(),
+    addAutoCaptureEntry: vi.fn(),
+    pruneAutoCaptureEntriesBefore: vi.fn(),
+    deleteAutoCaptureEntry: vi.fn(),
+    clearAutoCaptureEntries: vi.fn(),
+    getAutoCaptureEntryPath: vi.fn(),
+    getAutoCaptureEntryPaths: vi.fn(),
+    getStorageUsage: vi.fn(),
+    cleanupOrphanedStorageFiles: vi.fn(),
+    searchLocal: vi.fn(),
     captureTextOrLink: vi.fn(),
     captureTextOrLinkIntoBox: vi.fn(),
     captureImageData: vi.fn(),
@@ -43,6 +64,7 @@ function createStoreDouble() {
     moveItemToBox: vi.fn(),
     moveItemToIndex: vi.fn(),
     reorderItem: vi.fn(),
+    applyAiOrganization: vi.fn(),
     selectBox: vi.fn(),
     getBundleEntries: vi.fn(),
     updateLinkTitle: vi.fn(),
@@ -68,16 +90,89 @@ describe("registerIpc", () => {
     );
   });
 
+  it("registers standalone notepad handlers", () => {
+    registerIpc(createStoreDouble());
+
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.getNotepadSnapshot, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.createNotepadGroup, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.createNotepadNote, expect.any(Function));
+  });
+
+  it("registers automatic desktop capture handlers", () => {
+    registerIpc(createStoreDouble());
+
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.getAutoCaptureSnapshot, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.startAutoCapture, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.stopAutoCapture, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.pauseAutoCaptureForPrivacy, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.captureDesktopNow, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.searchAutoCaptures, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.deleteAutoCaptureEntry, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.clearAutoCaptures, expect.any(Function));
+  });
+
+  it("registers storage usage and cleanup handlers with the automatic capture directory", async () => {
+    const store = createStoreDouble();
+    store.getStorageUsage.mockReturnValue({
+      databaseBytes: 1,
+      imageBytes: 2,
+      thumbnailBytes: 3,
+      autoCaptureBytes: 4,
+      totalBytes: 10,
+    });
+    store.cleanupOrphanedStorageFiles.mockReturnValue({
+      usage: {
+        databaseBytes: 1,
+        imageBytes: 1,
+        thumbnailBytes: 1,
+        autoCaptureBytes: 1,
+        totalBytes: 4,
+      },
+      removedFiles: 2,
+      removedBytes: 2048,
+    });
+
+    registerIpc(store, { autoCaptureDirectory: "C:\\brain\\auto-captures" });
+    const getUsageHandler = ipcMainMocks.handle.mock.calls.find(
+      ([channel]) => channel === IPC_CHANNELS.getStorageUsage
+    )?.[1];
+    const cleanupOrphansHandler = ipcMainMocks.handle.mock.calls.find(
+      ([channel]) => channel === IPC_CHANNELS.cleanupOrphanedStorageFiles
+    )?.[1];
+
+    await getUsageHandler();
+    await cleanupOrphansHandler();
+
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.getStorageUsage, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.cleanupExpiredAutoCaptures, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.cleanupOrphanedStorageFiles, expect.any(Function));
+    expect(store.getStorageUsage).toHaveBeenCalledWith("C:\\brain\\auto-captures");
+    expect(store.cleanupOrphanedStorageFiles).toHaveBeenCalledWith("C:\\brain\\auto-captures");
+  });
+
+  it("registers the unified local search handler", async () => {
+    const store = createStoreDouble();
+    store.searchLocal.mockReturnValue({
+      query: "预算",
+      results: [],
+    });
+
+    registerIpc(store);
+    const searchHandler = ipcMainMocks.handle.mock.calls.find(
+      ([channel]) => channel === IPC_CHANNELS.searchLocal
+    )?.[1];
+
+    const result = await searchHandler(null, "预算", 12);
+
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.searchLocal, expect.any(Function));
+    expect(store.searchLocal).toHaveBeenCalledWith("预算", 12);
+    expect(result).toEqual({ query: "预算", results: [] });
+  });
+
   it("registers the box selection handler", () => {
     registerIpc(createStoreDouble());
 
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.selectBox, expect.any(Function));
-  });
-
-  it("registers the always-on-top handler", () => {
-    registerIpc(createStoreDouble());
-
-    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.setAlwaysOnTop, expect.any(Function));
   });
 
   it("registers clipboard capture handlers", () => {
@@ -112,5 +207,10 @@ describe("registerIpc", () => {
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.moveItemToIndex, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.reorderItem, expect.any(Function));
     expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.getBundleEntries, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.suggestAiOrganization, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.applyAiOrganization, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.getAiProviderConfig, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.saveAiProviderConfig, expect.any(Function));
+    expect(ipcMainMocks.handle).toHaveBeenCalledWith(IPC_CHANNELS.testAiProviderConnection, expect.any(Function));
   });
 });

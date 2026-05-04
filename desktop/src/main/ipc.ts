@@ -1,7 +1,23 @@
 import { writeFile } from "node:fs/promises";
-import { clipboard, dialog, ipcMain, shell } from "electron";
+import { BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import { IPC_CHANNELS } from "../shared/ipc";
-import type { ClearBoxItemsKind, WorkbenchSnapshot } from "../shared/types";
+import type {
+  AiOrganizationSuggestion,
+  AiProviderConfigInput,
+  ClearBoxItemsKind,
+} from "../shared/types";
+import { getAiProviderConfigStatus, saveAiProviderConfig, testAiProviderConnection } from "./ai-config";
+import {
+  captureDesktopNow,
+  cleanupExpiredAutoCaptures as cleanupExpiredAutoCaptureEntries,
+  clearAutoCaptures,
+  deleteAutoCaptureEntry,
+  getAutoCaptureSnapshot,
+  pauseAutoCaptureForPrivacy,
+  startAutoCapture,
+  stopAutoCapture,
+  subscribeAutoCaptureSnapshots,
+} from "./auto-capture";
 import {
   captureClipboardNow,
   getClipboardCaptureBoxId,
@@ -9,8 +25,13 @@ import {
   setClipboardCaptureBoxId,
   startClipboardWatcher,
   stopClipboardWatcher,
+  subscribeClipboardCaptureResults,
 } from "./clipboard-capture";
+import { suggestAiOrganization } from "./ai-organizer";
 import type { DesktopStore } from "./store";
+
+let unsubscribeClipboardCaptureResults: (() => void) | null = null;
+let unsubscribeAutoCaptureSnapshots: (() => void) | null = null;
 
 function getSafeExportName(bundleName: string) {
   const normalized = Array.from(bundleName.trim())
@@ -42,21 +63,63 @@ function getClipboardCaptureBoxStatus(store: DesktopStore) {
 
 export function registerIpc(
   store: DesktopStore,
-  options: {
-    onSetAlwaysOnTop?: (enabled: boolean, senderWindowId?: number) => WorkbenchSnapshot | void;
-  } = {}
+  options: { autoCaptureDirectory?: string } = {}
 ) {
-  ipcMain.handle(IPC_CHANNELS.bootstrap, () => store.getWorkbenchSnapshot());
-  ipcMain.handle(IPC_CHANNELS.setAlwaysOnTop, (event, enabled: boolean) => {
-    if (options.onSetAlwaysOnTop) {
-      const snapshot = options.onSetAlwaysOnTop(enabled, event.sender.id);
-      if (snapshot) {
-        return snapshot;
-      }
-    }
+  const autoCaptureDirectory = options.autoCaptureDirectory ?? "";
 
-    return store.setAlwaysOnTop(enabled);
+  if (!unsubscribeClipboardCaptureResults) {
+    unsubscribeClipboardCaptureResults = subscribeClipboardCaptureResults((result) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.clipboardCaptureChanged, result);
+        }
+      });
+    });
+  }
+
+  if (!unsubscribeAutoCaptureSnapshots) {
+    unsubscribeAutoCaptureSnapshots = subscribeAutoCaptureSnapshots((snapshot) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.autoCaptureChanged, snapshot);
+        }
+      });
+    });
+  }
+
+  ipcMain.handle(IPC_CHANNELS.bootstrap, () => store.getWorkbenchSnapshot());
+  ipcMain.handle(IPC_CHANNELS.getNotepadSnapshot, () => store.getNotepadSnapshot());
+  ipcMain.handle(IPC_CHANNELS.createNotepadGroup, (_event, name: string) => store.createNotepadGroup(name));
+  ipcMain.handle(IPC_CHANNELS.createNotepadNote, (_event, groupId: number, content: string) =>
+    store.createNotepadNote(groupId, content)
+  );
+  ipcMain.handle(IPC_CHANNELS.getAutoCaptureSnapshot, (_event, query?: string) =>
+    getAutoCaptureSnapshot(query)
+  );
+  ipcMain.handle(IPC_CHANNELS.startAutoCapture, (_event, nextIntervalMs?: number) =>
+    startAutoCapture(nextIntervalMs)
+  );
+  ipcMain.handle(IPC_CHANNELS.stopAutoCapture, () => stopAutoCapture());
+  ipcMain.handle(IPC_CHANNELS.pauseAutoCaptureForPrivacy, () => pauseAutoCaptureForPrivacy());
+  ipcMain.handle(IPC_CHANNELS.captureDesktopNow, () => captureDesktopNow());
+  ipcMain.handle(IPC_CHANNELS.searchAutoCaptures, (_event, query: string) => getAutoCaptureSnapshot(query));
+  ipcMain.handle(IPC_CHANNELS.deleteAutoCaptureEntry, (_event, entryId: number) =>
+    deleteAutoCaptureEntry(entryId)
+  );
+  ipcMain.handle(IPC_CHANNELS.clearAutoCaptures, () => clearAutoCaptures());
+  ipcMain.handle(IPC_CHANNELS.getStorageUsage, () => store.getStorageUsage(autoCaptureDirectory));
+  ipcMain.handle(IPC_CHANNELS.cleanupExpiredAutoCaptures, async () => {
+    const result = await cleanupExpiredAutoCaptureEntries();
+    return {
+      usage: store.getStorageUsage(autoCaptureDirectory),
+      removedFiles: result.removedFiles,
+      removedBytes: result.removedBytes,
+    };
   });
+  ipcMain.handle(IPC_CHANNELS.cleanupOrphanedStorageFiles, () =>
+    store.cleanupOrphanedStorageFiles(autoCaptureDirectory)
+  );
+  ipcMain.handle(IPC_CHANNELS.searchLocal, (_event, query: string, limit?: number) => store.searchLocal(query, limit));
   ipcMain.handle(IPC_CHANNELS.captureClipboardNow, () => captureClipboardNow(store));
   ipcMain.handle(IPC_CHANNELS.setClipboardWatcherEnabled, (_event, enabled: boolean) =>
     enabled ? startClipboardWatcher(store) : stopClipboardWatcher()
@@ -142,6 +205,19 @@ export function registerIpc(
     store.reorderItem(itemId, direction)
   );
   ipcMain.handle(IPC_CHANNELS.getBundleEntries, (_event, itemId: number) => store.getBundleEntries(itemId));
+  ipcMain.handle(IPC_CHANNELS.suggestAiOrganization, (_event, boxId: number) =>
+    suggestAiOrganization(store, boxId)
+  );
+  ipcMain.handle(IPC_CHANNELS.applyAiOrganization, (_event, suggestions: AiOrganizationSuggestion[]) =>
+    store.applyAiOrganization(suggestions)
+  );
+  ipcMain.handle(IPC_CHANNELS.getAiProviderConfig, () => getAiProviderConfigStatus());
+  ipcMain.handle(IPC_CHANNELS.saveAiProviderConfig, (_event, input: AiProviderConfigInput) =>
+    saveAiProviderConfig(input)
+  );
+  ipcMain.handle(IPC_CHANNELS.testAiProviderConnection, (_event, input: AiProviderConfigInput) =>
+    testAiProviderConnection(input)
+  );
   ipcMain.handle(IPC_CHANNELS.selectBox, (_event, boxId: number) => store.selectBox(boxId));
   ipcMain.handle(IPC_CHANNELS.enrichLinkTitle, async (_event, itemId: number, url: string) => {
     try {

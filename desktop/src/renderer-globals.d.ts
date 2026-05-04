@@ -1,9 +1,19 @@
 import type {
+  AiOrganizationResult,
+  AiOrganizationSuggestion,
+  AiProviderConfig,
+  AiProviderConfigInput,
+  AiProviderConnectionTestResult,
+  AutoCaptureSnapshot,
   BundleEntry,
   ClearBoxItemsKind,
   ClipboardCaptureBoxStatus,
   ClipboardCaptureIpcResult,
   ClipboardWatcherStatus,
+  LocalSearchSnapshot,
+  NotepadSnapshot,
+  StorageCleanupResult,
+  StorageUsageSnapshot,
   WorkbenchSnapshot,
 } from "./shared/types";
 
@@ -11,8 +21,24 @@ declare global {
   interface Window {
     brainDesktop: {
       bootstrap(): Promise<WorkbenchSnapshot>;
+      getNotepadSnapshot(): Promise<NotepadSnapshot>;
+      createNotepadGroup(name: string): Promise<NotepadSnapshot>;
+      createNotepadNote(groupId: number, content: string): Promise<NotepadSnapshot>;
+      getAutoCaptureSnapshot(query?: string): Promise<AutoCaptureSnapshot>;
+      startAutoCapture(intervalMs?: number): Promise<AutoCaptureSnapshot>;
+      stopAutoCapture(): Promise<AutoCaptureSnapshot>;
+      pauseAutoCaptureForPrivacy(): Promise<AutoCaptureSnapshot>;
+      captureDesktopNow(): Promise<AutoCaptureSnapshot>;
+      searchAutoCaptures(query: string): Promise<AutoCaptureSnapshot>;
+      deleteAutoCaptureEntry(entryId: number): Promise<AutoCaptureSnapshot>;
+      clearAutoCaptures(): Promise<AutoCaptureSnapshot>;
+      getStorageUsage(): Promise<StorageUsageSnapshot>;
+      cleanupExpiredAutoCaptures(): Promise<StorageCleanupResult>;
+      cleanupOrphanedStorageFiles(): Promise<StorageCleanupResult>;
+      searchLocal(query: string, limit?: number): Promise<LocalSearchSnapshot>;
+      onAutoCaptureChanged?(handler: (snapshot: AutoCaptureSnapshot) => void): () => void;
       getPathsForFiles(files: File[]): string[];
-      setAlwaysOnTop(enabled: boolean): Promise<WorkbenchSnapshot>;
+      onClipboardCapture?(handler: (result: ClipboardCaptureIpcResult) => void): () => void;
       captureClipboardNow(): Promise<ClipboardCaptureIpcResult>;
       setClipboardWatcherEnabled(enabled: boolean): Promise<ClipboardWatcherStatus>;
       getClipboardWatcherStatus(): Promise<ClipboardWatcherStatus>;
@@ -39,6 +65,11 @@ declare global {
       copyText(text: string): Promise<void>;
       exportBundleAi(bundleName: string, html: string): Promise<string | null>;
       enrichLinkTitle(itemId: number, url: string): Promise<WorkbenchSnapshot | null>;
+      suggestAiOrganization(boxId: number): Promise<AiOrganizationResult>;
+      applyAiOrganization(suggestions: AiOrganizationSuggestion[]): Promise<WorkbenchSnapshot>;
+      getAiProviderConfig(): Promise<AiProviderConfig>;
+      saveAiProviderConfig(input: AiProviderConfigInput): Promise<AiProviderConfig>;
+      testAiProviderConnection(input: AiProviderConfigInput): Promise<AiProviderConnectionTestResult>;
       moveItemToBox(itemId: number, boxId: number): Promise<WorkbenchSnapshot>;
       moveItemToIndex(itemId: number, targetIndex: number): Promise<WorkbenchSnapshot>;
       reorderItem(itemId: number, direction: "up" | "down"): Promise<WorkbenchSnapshot>;

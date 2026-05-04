@@ -1,28 +1,16 @@
-# 灵感收集
+# Brain Desktop
 
-一个本地运行的 Flask 小工具，用来收集、整理和跟踪零散灵感。
+本地零摩擦收集工作台。当前主方向是 Electron 桌面端：复制文本、链接或图片后，用快捷键或托盘直接收进盒子。
 
 ## 功能
 
-- 快速记录文字、链接、图片和视频
-- 自动抓取链接标题
-- 按分类、类型、状态、关键词筛选
-- 批量删除与合并多条记录
-- 支持给每条灵感补充来源、标签、备注
+- 盒子和卡片：文字、链接、图片、文件和组合卡片。
+- 系统级收集：`Ctrl+Shift+B` 收集剪贴板，`Ctrl+Alt+B` 切换自动监听。
+- 托盘菜单：立即收集剪贴板、开启/关闭自动监听、打开主窗口、退出。
+- 去重过滤：短时间重复内容不会反复刷屏。
+- AI 整理：DeepSeek 帮当前盒子生成归类和标题补全建议，确认后再应用。
 
-## 启动方式
-
-```bash
-pip install -r requirements.txt
-python app.py
-```
-
-启动后访问 [http://localhost:5001](http://localhost:5001)。
-
-## Desktop 桌面版
-
-桌面版是当前主方向：本地零摩擦收集工作台，数据存储在 Electron `userData` 目录下的
-`brain-desktop.db`。
+## 启动
 
 ```bash
 cd desktop
@@ -30,70 +18,60 @@ npm install
 npm start
 ```
 
-常用入口：
+数据存储在 Electron `userData` 目录下：
 
-- `Ctrl+Shift+B`：从任意软件收集当前剪贴板文本、链接或图片。
-- `Ctrl+Alt+B`：开启或关闭剪贴板自动监听。
-- 托盘菜单：立即收集剪贴板、开启/关闭自动监听、打开主窗口、退出。
-- 当前选中盒子会作为默认收集目标；没有选中盒子时进入默认收件箱。
+- `brain-desktop.db`：盒子和卡片数据
+- `brain-ai-config.json`：本机 AI 配置
 
-## 开发模式
+## AI 配置
 
-如果你还在频繁改代码或模板，直接双击 [dev.bat](/D:/02-Projects/brain/dev.bat) 就行。
-它会启动源码版服务，Flask 自带热重载，保存文件后通常不用重新打包就能看到变化，
-并且会自动打开浏览器，命令行会最小化在后台运行。
+可以在应用的“关于”界面填写 DeepSeek API Key、Base URL 和模型名。
 
-## 推荐流程
+也可以用环境变量：
 
-- 日常开发：用 [dev.bat](/D:/02-Projects/brain/dev.bat)
-- 临时直接运行：用 `python app.py`
-- 对外发布：用 `waitress-serve --host 0.0.0.0 --port 5001 wsgi:app`
+```powershell
+$env:DEEPSEEK_API_KEY="你的 DeepSeek API Key"
+$env:DEEPSEEK_MODEL="deepseek-v4-flash"
+```
 
-## 当前主界面
+`DEEPSEEK_MODEL` 可不填，默认使用 `deepseek-v4-flash`；默认 Base URL 是 `https://api.deepseek.com`。
 
-- 所有新内容先进入 `未整理`
-- 左侧是主题盒子，支持拖拽归位
-- 卡片会给出建议盒子和标签
-- 组合内容会以文件夹卡展示，并露出子项预览
+## 开发命令
+
+```bash
+cd desktop
+npm run lint
+npm test
+```
+
+`npm test` 是日常开发测试，不会跑 Windows 安装包清理和构建验证。需要验证安装包流程时再单独运行：
+
+```bash
+npm run test:packaging
+npm run make
+```
+
+Windows 打包现在使用 NSIS 安装包，生成 `.exe`，不是 Squirrel 的一键安装 EXE。安装器会显示向导，并允许选择安装目录。
+
+打包前请先关闭正在运行的开发窗口或 `npm start`，否则清理 `.webpack` 时可能被占用。
+
+```powershell
+cd desktop
+npm run make
+```
+
+打包产物会输出到仓库根目录的 `.desktop-out/`，这是本地生成目录，不提交到 Git：
+
+- 免安装版：`.desktop-out/Brain Desktop-win32-x64/Brain Desktop.exe`
+- 安装包：`.desktop-out/make/nsis/Brain Desktop Setup 1.0.0.exe`
+
+生产打包的类型检查使用 `desktop/tsconfig.package.json`，只检查应用运行时代码，排除 `*.test.ts(x)` 测试文件；日常测试仍使用 Vitest。
 
 ## 技术栈
 
-- Flask
-- Flask-SQLAlchemy
-- SQLite
-- 原生 HTML / CSS / JavaScript
+- Electron
+- React
+- TypeScript
+- SQLite (`better-sqlite3`)
 
-## 发布前最小配置
-
-如果只是本地自己用，直接 `python app.py` 就够了。  
-如果要放到云主机或给别人访问，至少补下面这些环境变量：
-
-```bash
-BRAIN_DEBUG=0
-BRAIN_HOST=0.0.0.0
-BRAIN_PORT=5001
-BRAIN_SECRET_KEY=换成一串长随机字符串
-BRAIN_PASSWORD=换成一个访问密码
-BRAIN_SESSION_COOKIE_SECURE=1
-```
-
-说明：
-
-- `BRAIN_PASSWORD`：开启最小访问保护。不配就不会有登录门。
-- `BRAIN_SECRET_KEY`：必须自己设置，别用临时值。
-- `BRAIN_SESSION_COOKIE_SECURE=1`：只在 HTTPS 下发送登录 cookie，正式环境建议开启。
-
-## 最小发布建议
-
-推荐放到一台有持久磁盘的云主机上，再挂 Nginx 或 Caddy：
-
-1. 安装依赖：`pip install -r requirements.txt`
-2. 配环境变量
-3. 用生产服务启动：`waitress-serve --host 0.0.0.0 --port 5001 wsgi:app`
-4. 反向代理到你的域名并开启 HTTPS
-5. 定期备份 `instance/` 和 `uploads/`
-
-## 健康检查
-
-- 健康检查地址：`/healthz`
-- 成功时返回：`{"ok": true}`
+旧 Flask 网页端已经移除；后续捕获能力只在 Desktop 方向维护。

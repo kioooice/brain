@@ -1,7 +1,9 @@
-import { app, BrowserWindow, globalShortcut, Tray } from "electron";
+import { app, BrowserWindow, globalShortcut, protocol, Tray } from "electron";
 import type { Rectangle } from "electron";
 import { join } from "node:path";
+import { AUTO_CAPTURE_IMAGE_PROTOCOL } from "./shared/auto-capture-url";
 import { buildTrayMenu, createTrayIcon, shouldHideWindowToTray } from "./main/background";
+import { configureAutoCapture, registerAutoCaptureProtocol, stopAutoCapture } from "./main/auto-capture";
 import {
   captureClipboardNow,
   isClipboardWatcherRunning,
@@ -21,10 +23,6 @@ import {
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
-if (require("electron-squirrel-startup")) {
-  app.quit();
-}
-
 type WindowMode = "main";
 
 let store: ReturnType<typeof createStore>;
@@ -35,13 +33,20 @@ let lastWindowMode: WindowMode = "main";
 let lastMainWindowBounds: Rectangle | undefined;
 const showNativeMenu = shouldShowNativeMenu(app.isPackaged);
 
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: AUTO_CAPTURE_IMAGE_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
 function getWindowMode(): WindowMode {
   return "main";
-}
-
-function applyWindowAlwaysOnTop(window: BrowserWindow, mode: WindowMode) {
-  void mode;
-  window.setAlwaysOnTop(false, "normal");
 }
 
 function getWindowBoundsForMode(mode: WindowMode): WindowLaunchBounds {
@@ -86,7 +91,6 @@ function createWindow(mode: WindowMode, bounds?: WindowLaunchBounds): BrowserWin
   });
 
   window.setMenuBarVisibility(showNativeMenu);
-  applyWindowAlwaysOnTop(window, mode);
   attachWindowBoundsPersistence(window, mode);
 
   window.on("close", (event) => {
@@ -157,7 +161,6 @@ function showWindow(mode: WindowMode) {
   }
 
   mainWindow.setSkipTaskbar(false);
-  applyWindowAlwaysOnTop(mainWindow, nextMode);
 
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
@@ -208,24 +211,16 @@ function registerGlobalShortcuts() {
   registerGlobalShortcut("CommandOrControl+Alt+B", handleToggleClipboardWatcher);
 }
 
-function handleSetAlwaysOnTop(enabled: boolean, senderWindowId?: number) {
-  const snapshot = store.setAlwaysOnTop(enabled);
-  const senderWindow =
-    BrowserWindow.getAllWindows().find((window) => window.webContents.id === senderWindowId) ?? mainWindow;
-
-  if (senderWindow && !senderWindow.isDestroyed()) {
-    applyWindowAlwaysOnTop(senderWindow, getWindowMode());
-  }
-
-  return snapshot;
-}
-
 app.whenReady().then(() => {
   store = createStore(join(app.getPath("userData"), "brain-desktop.db"));
-  setClipboardCaptureBoxId(store.getWorkbenchSnapshot().boxes[0]?.id ?? null);
-  registerIpc(store, {
-    onSetAlwaysOnTop: handleSetAlwaysOnTop,
+  const autoCaptureDirectory = join(app.getPath("userData"), "auto-captures");
+  configureAutoCapture({
+    store,
+    captureDirectory: autoCaptureDirectory,
   });
+  registerAutoCaptureProtocol(store, autoCaptureDirectory);
+  setClipboardCaptureBoxId(store.getWorkbenchSnapshot().boxes[0]?.id ?? null);
+  registerIpc(store, { autoCaptureDirectory });
   updateApplicationMenu(getWindowMode());
   ensureTray();
   registerGlobalShortcuts();
@@ -234,6 +229,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  stopAutoCapture();
   stopClipboardWatcher();
   globalShortcut.unregisterAll();
 });

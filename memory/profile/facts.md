@@ -1,5 +1,5 @@
 # Facts
 
-- Project: local Flask inspiration collector
-- Port: 5001
-- Storage: SQLite
+- Project: Brain Desktop, an Electron inspiration collector
+- Runtime: local desktop app
+- Storage: SQLite in Electron userData

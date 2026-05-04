@@ -11,8 +11,9 @@ Use this file for environment-specific notes that are unique to this setup.
 
 ## Current Setup
 
-- App entrypoint: `app.py`
-- Desktop launcher: `launcher.py`
-- Dev server: `dev.bat`
-- Packaged launch: `start.bat`
-- Build script: `build.bat`
+- Desktop app: `desktop/`
+- Dev server: `cd desktop && npm start`
+- Lint: `cd desktop && npm run lint`
+- Tests: `cd desktop && npm test`
+- Package: `cd desktop && npm run make`
+- Windows installer: `npm run make` packages with Forge, then uses electron-builder NSIS to create a selectable-directory `.exe`; close `npm start` first.

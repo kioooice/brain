@@ -1,5 +1,12 @@
+import { createHash } from "node:crypto";
+
 const RECENT_DUPLICATE_WINDOW_MS = 10_000;
 const recentFingerprints = new Map<string, number>();
+
+export type RecentFingerprintEntry = {
+  fingerprint: string;
+  lastSeenAt: number;
+};
 
 function isHttpUrl(value: string) {
   try {
@@ -39,14 +46,24 @@ function normalizeUrlForFingerprint(value: string) {
   return url.toString();
 }
 
+function normalizeImageForFingerprint(value: string) {
+  return value.trim().replace(/\s+/g, "");
+}
+
+function hashFingerprintValue(value: string) {
+  return createHash("sha256").update(value).digest("hex").slice(0, 32);
+}
+
 export function buildFingerprint(kind: string, value: string) {
   const normalizedValue = value.trim();
   const fingerprintValue =
-    kind === "text" && isHttpUrl(normalizedValue)
-      ? normalizeUrlForFingerprint(normalizedValue)
-      : normalizedValue.replace(/\s+/g, " ");
+    kind === "image"
+      ? normalizeImageForFingerprint(normalizedValue)
+      : kind === "text" && isHttpUrl(normalizedValue)
+        ? normalizeUrlForFingerprint(normalizedValue)
+        : normalizedValue.replace(/\s+/g, " ");
 
-  return `${kind}:${fingerprintValue}`;
+  return `${kind}:${hashFingerprintValue(fingerprintValue)}`;
 }
 
 export function shouldIgnoreText(text: string) {
@@ -105,6 +122,36 @@ export function rememberFingerprint(fingerprint: string) {
   const now = Date.now();
   recentFingerprints.set(fingerprint, now);
 
+  pruneRecentFingerprints(now);
+}
+
+export function serializeRecentFingerprints(now = Date.now()): RecentFingerprintEntry[] {
+  pruneRecentFingerprints(now);
+  return Array.from(recentFingerprints.entries()).map(([fingerprint, lastSeenAt]) => ({
+    fingerprint,
+    lastSeenAt,
+  }));
+}
+
+export function hydrateRecentFingerprints(entries: RecentFingerprintEntry[], now = Date.now()) {
+  entries.forEach((entry) => {
+    if (typeof entry.fingerprint !== "string" || typeof entry.lastSeenAt !== "number") {
+      return;
+    }
+
+    if (now - entry.lastSeenAt <= RECENT_DUPLICATE_WINDOW_MS) {
+      recentFingerprints.set(entry.fingerprint, entry.lastSeenAt);
+    }
+  });
+
+  pruneRecentFingerprints(now);
+}
+
+export function clearRecentFingerprints() {
+  recentFingerprints.clear();
+}
+
+function pruneRecentFingerprints(now: number) {
   for (const [entry, timestamp] of recentFingerprints.entries()) {
     if (now - timestamp > RECENT_DUPLICATE_WINDOW_MS) {
       recentFingerprints.delete(entry);
